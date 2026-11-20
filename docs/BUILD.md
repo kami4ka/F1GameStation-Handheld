@@ -1,8 +1,7 @@
 # Building an F1GameStation
 
-> [!WARNING]
-> Rev 1 is a prototype. The console works (LCD, sound, buttons, games), but the battery gauge,
-> backlight dimming and USB high speed have not been tested yet on this revision. Read the [known issues](../README.md#known-issues) first.
+> [!NOTE]
+> Rev 1 is a fully working console, but it is a first revision. Read the [known issues](../README.md#known-issues) first.
 
 You will need a hot-air station and a fine-tip iron (the SoC is a 0.4 mm QFN-88), a USB-C cable,
 a microSD card (4 GB or more), and a 3D printer for the case.

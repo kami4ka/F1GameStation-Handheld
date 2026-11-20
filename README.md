@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-work%20in%20progress-e6c25a" alt="Status: work in progress">
+  <img src="https://img.shields.io/badge/status-working%20prototype-7fcf8a" alt="Status: working prototype">
   <img src="https://img.shields.io/badge/hardware-Rev%201-d9893f" alt="Hardware Rev 1">
   <img src="https://img.shields.io/badge/KiCad-10-314cb0?logo=kicad&logoColor=white" alt="KiCad 10">
   <a href="hardware/LICENSE"><img src="https://img.shields.io/badge/hardware-CERN--OHL--S--2.0-2c7a4b" alt="CERN-OHL-S-2.0"></a>
@@ -27,10 +27,10 @@
   <a href="https://github.com/kami4ka/F1GameStation-Handheld/releases"><b>SD card image</b></a>
 </p>
 
-> [!WARNING]
-> **This is a work in progress.** Rev 1 is a working console: it boots, shows the menu on the LCD, plays
-> games with sound, and reads every button. The battery gauge, backlight dimming and USB high speed have
-> **not been tested yet**, and Rev 1 has [known issues](#known-issues). Build one if you are happy to debug.
+> [!NOTE]
+> **Rev 1 is a fully working console**: LCD, sound, buttons, battery, backlight and USB all work, and it
+> plays games. It is still a first revision with [known issues](#known-issues), so expect some hand work
+> while building one.
 
 ## What it is
 
@@ -82,9 +82,9 @@ No hardware yet? The [emulator](firmware/emulator/README.md) boots the same SD c
 | MiyooCFW kernel, menu, emulators | ✅ boots and runs |
 | LCD | ✅ working |
 | Audio (codec, amplifier, speaker) | ✅ working |
-| Battery gauge | ⏳ not tested yet |
-| Backlight | ⏳ not tested yet |
-| USB high speed | ⏳ not tested yet |
+| Battery gauge | ✅ working |
+| Backlight | ✅ working |
+| USB high speed | ✅ working |
 
 ### Known issues
 
