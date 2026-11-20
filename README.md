@@ -32,6 +32,10 @@
 > plays games. It is still a first revision with [known issues](#known-issues), so expect some hand work
 > while building one.
 
+<p align="center">
+  <a href="https://kami4ka.github.io/F1GameStation-Handheld/"><img src="docs/images/explode.gif" alt="Exploded view: caps, front shell, board with LCD, back shell" width="720"></a>
+</p>
+
 ## What it is
 
 | | |
