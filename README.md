@@ -28,9 +28,9 @@
 </p>
 
 > [!WARNING]
-> **This is a work in progress.** Rev 1 boots, runs the menu and the emulators, and every button is read.
-> The LCD, audio, battery gauge, backlight and USB high speed have **not been tested yet** on the
-> released board, and Rev 1 has [known issues](#known-issues). Build one if you are happy to debug.
+> **This is a work in progress.** Rev 1 is a working console: it boots, shows the menu on the LCD, plays
+> games with sound, and reads every button. The battery gauge, backlight dimming and USB high speed have
+> **not been tested yet**, and Rev 1 has [known issues](#known-issues). Build one if you are happy to debug.
 
 ## What it is
 
@@ -80,8 +80,8 @@ No hardware yet? The [emulator](firmware/emulator/README.md) boots the same SD c
 | Power rails (EA3059C bucks, 3V0 LDO) | ✅ working |
 | Buttons (13 inputs) | ✅ working, see PA1–PA3 below |
 | MiyooCFW kernel, menu, emulators | ✅ boots and runs |
-| LCD | ⏳ not tested yet |
-| Audio | ⏳ not tested yet |
+| LCD | ✅ working |
+| Audio (codec, amplifier, speaker) | ✅ working |
 | Battery gauge | ⏳ not tested yet |
 | Backlight | ⏳ not tested yet |
 | USB high speed | ⏳ not tested yet |
