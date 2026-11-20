@@ -4,7 +4,8 @@
 
 <p align="center">
   An open-source, PSP-style handheld for 8- and 16-bit games,<br>
-  built around the Allwinner F1C200s and running a port of MiyooCFW.
+  built around the Allwinner F1C200s and running a port of MiyooCFW.<br>
+  <b>About $25 in parts, and every file is open.</b>
 </p>
 
 <p align="center">
@@ -48,6 +49,7 @@
 | **Storage** | microSD (boot and games), optional 16 MB SPI flash |
 | **Board** | 176 × 70 mm, 4 layers (JLC04161H-7628), JLCPCB assembly |
 | **Case** | 186 × 80 mm, FDM-printed in PETG, M2 heat-set inserts |
+| **Cost** | about $25 per unit (board share, parts, LCD, battery, filament) |
 | **Firmware** | MiyooCFW 2.0 with a 480×272 kernel driver, a 480×272 gmenu2x and a cover-flow launcher |
 
 ## Repository
