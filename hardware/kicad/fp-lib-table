@@ -1,4 +1,4 @@
 (fp_lib_table
 	(version 7)
-	(lib (name "F1GameStation") (type "KiCad") (uri "${KIPRJMOD}/libraries/F1GameStation.pretty") (options "") (descr "Footprints imported from EasyEDA AnalogCoprocessor v3"))
+	(lib (name "F1GameStation") (type "KiCad") (uri "${KIPRJMOD}/libraries/F1GameStation.pretty") (options "") (descr "Footprints from the FPVault board (EasyEDA/LCSC library)"))
 )

@@ -114,7 +114,7 @@ site/           сайт проєкту (3D переглядач, KiCanvas) дл
 ## Подяки
 
 - [MiyooCFW](https://github.com/MiyooCFW) за ядро, кореневу файлову систему, gmenu2x і збірки емуляторів.
-- Ядро SoC взято з попередньої плати автора AnalogCoprocessor v3, перевіреної в трьох ревізіях.
+- Ядро на F1C200s (SoC, DRAM, живлення, SD) взято з [FPVault](https://github.com/kami4ka/FPVault) — відкритого бортового DVR для аналогового FPV від автора, перевіреного в трьох ревізіях плати.
 - [KiCanvas](https://kicanvas.org), [InteractiveHtmlBom](https://github.com/openscopeproject/InteractiveHtmlBom) і [three.js](https://threejs.org) для сайту проєкту.
 
 ## Ліцензія

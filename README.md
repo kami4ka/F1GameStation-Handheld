@@ -114,7 +114,7 @@ Launcher screenshots are emulator captures with homebrew games and placeholder a
 ## Credits
 
 - [MiyooCFW](https://github.com/MiyooCFW) for the kernel, root filesystem, gmenu2x and the emulator builds this firmware is based on.
-- The SoC core comes from the author's earlier AnalogCoprocessor v3 board, tested over three revisions.
+- The F1C200s core (SoC, DRAM, power, SD) comes from [FPVault](https://github.com/kami4ka/FPVault), the author's open-source onboard DVR for analog FPV, where it was tested over three board revisions.
 - [KiCanvas](https://kicanvas.org), [InteractiveHtmlBom](https://github.com/openscopeproject/InteractiveHtmlBom) and [three.js](https://threejs.org) for the project site.
 
 ## License
