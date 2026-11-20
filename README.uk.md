@@ -99,7 +99,7 @@ site/           сайт проєкту (3D переглядач, KiCanvas) дл
 
 <p>
   <img src="docs/images/white-build.jpg" width="49%" alt="Біла збірка">
-  <img src="docs/images/board-test-pattern.jpg" width="24%" alt="Плата Rev 1 з тестовим зображенням на екрані">
+  <img src="docs/images/board-test-pattern.jpg" width="49%" alt="Плата Rev 1 з тестовим зображенням на екрані">
   <img src="docs/images/launcher-shelf.png" width="49%" alt="Лаунчер cover-flow">
   <img src="docs/images/enclosure-iso.png" width="49%" alt="Рендер корпусу">
   <img src="docs/images/pcba-battery.png" width="49%" alt="Плата з батареєю">

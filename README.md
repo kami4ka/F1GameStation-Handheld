@@ -99,7 +99,7 @@ No hardware yet? The [emulator](firmware/emulator/README.md) boots the same SD c
 
 <p>
   <img src="docs/images/white-build.jpg" width="49%" alt="White build">
-  <img src="docs/images/board-test-pattern.jpg" width="24%" alt="Rev 1 board showing the LCD test pattern">
+  <img src="docs/images/board-test-pattern.jpg" width="49%" alt="Rev 1 board showing the LCD test pattern">
   <img src="docs/images/launcher-shelf.png" width="49%" alt="Cover-flow launcher">
   <img src="docs/images/enclosure-iso.png" width="49%" alt="Enclosure render">
   <img src="docs/images/pcba-battery.png" width="49%" alt="PCBA with battery">
