@@ -354,10 +354,26 @@ const caseNodes = [];
 // three.js turns spaces in node names into underscores
 const raw = await fetch('models/explode.json').then(r => r.json()).catch(() => ({}));
 const offsets = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.replace(/\s/g, '_'), v]));
-new GLTFLoader().load('models/f1gs.glb', gltf => {
+new GLTFLoader().load('models/f1gs.glb?v=2', gltf => {
   const root = gltf.scene;
   root.traverse(o => {
     if (!o.isMesh) return;
+    // the GLB carries no normals: split shared vertices so edges stay sharp, then derive them
+    if (!o.geometry.attributes.normal) {
+      o.geometry = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      o.geometry.computeVertexNormals();
+    }
+    // vertex colours are stored as sRGB bytes; three.js expects linear values
+    const col = o.geometry.attributes.color;
+    if (col && !col.userData?.linear) {
+      const lin = new Float32Array(col.count * 3), c = new THREE.Color();
+      for (let i = 0; i < col.count; i++) {
+        c.setRGB(col.getX(i), col.getY(i), col.getZ(i), THREE.SRGBColorSpace);
+        lin[3 * i] = c.r; lin[3 * i + 1] = c.g; lin[3 * i + 2] = c.b;
+      }
+      o.geometry.setAttribute('color', new THREE.BufferAttribute(lin, 3));
+      o.geometry.attributes.color.userData = { linear: true };
+    }
     const m = o.material;
     if (o.name === 'PCBA' || o.parent?.name === 'PCBA') {
       o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, metalness: .15 });
@@ -368,9 +384,28 @@ new GLTFLoader().load('models/f1gs.glb', gltf => {
     }
   });
   scene.add(root);
+  addScreen();
   document.getElementById('loading').remove();
   setExplode(+document.getElementById('explode').value);
 }, undefined, () => { document.getElementById('loading').textContent = 'model failed to load'; });
+
+// The LCD isn't in the board model: add the module (106 x 67 x 3 mm, 1 mm above the PCB,
+// block-out position) and its active area (99 x 56 mm) showing the launcher.
+function addScreen() {
+  const mm = 1e-3;
+  const module = new THREE.Mesh(
+    new THREE.BoxGeometry(106 * mm, 3 * mm, 67 * mm),
+    new THREE.MeshStandardMaterial({ color: 0xb9bdc2, roughness: .35, metalness: .7 }));
+  module.position.set(0, 2.5 * mm, -0.5 * mm);
+  const tex = new THREE.TextureLoader().load('images/launcher-shelf.png');
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(99 * mm, 56 * mm),
+    new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: .9, roughness: .15, metalness: 0 }));
+  glass.rotation.x = -Math.PI / 2;
+  glass.position.set(0, 4.05 * mm, 1.75 * mm);
+  scene.add(module, glass);
+}
 
 function setExplode(t) { for (const n of caseNodes) n.obj.position.y = n.base + n.d * t; }
 document.getElementById('explode').addEventListener('input', e => setExplode(+e.target.value));

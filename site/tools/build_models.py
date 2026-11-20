@@ -28,10 +28,10 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 PRINT = os.path.join(ROOT, 'enclosure', 'print')
 OUT = os.path.join(ROOT, 'site', 'models')
 
-SHELL = [40, 42, 46, 255]
-CAP = [28, 29, 32, 255]
-LABEL = [235, 235, 235, 255]
-TRIGGER = [55, 58, 64, 255]
+SHELL = [30, 31, 34, 255]
+CAP = [236, 236, 232, 255]      # white caps, like the black build
+LABEL = [24, 24, 26, 255]
+TRIGGER = [120, 124, 130, 255]
 
 # STL Z-up mm -> glTF Y-up metres: (x, y, z) -> (x, z, -y) / 1000
 TO_GLTF = np.array([[1, 0, 0, 0],
