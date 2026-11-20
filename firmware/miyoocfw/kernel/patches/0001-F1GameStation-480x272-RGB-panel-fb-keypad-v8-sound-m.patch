@@ -1,0 +1,1032 @@
+From ce8fb618f2b0f738c6a45ab3eee487018148247a Mon Sep 17 00:00:00 2001
+From: Oleg Kulyk <5595029+kami4ka@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 15:47:43 +0200
+Subject: [PATCH 1/3] F1GameStation: 480x272 RGB panel fb, keypad v8, sound
+ mode 4, device tree
+
+- rgb480x272fb: TCON0 HV mode for the 480x272 panel, 320x240 RGB565
+  shown centred by DEBE layer 0, vsync IRQ for FBIO_WAITFORVSYNC and
+  page flips latched at frame start.
+- miyoo_kbd: miyoo_ver 8 with one GPIO per button; PA1-PA3 read by
+  charge-then-sense; keys held when scanning starts are ignored until
+  released.
+- miyoo sound: miyoo_snd 4 keeps AMP_EN (PA0) on and skips jack
+  detect on PA2.
+- suniv-f1c100s-f1gamestation.dts: licheepi-nano UART0 console plus
+  the MiyooCFW peripheral nodes.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ arch/arm/boot/dts/Makefile                    |   1 +
+ .../boot/dts/suniv-f1c100s-f1gamestation.dts  | 111 ++++
+ drivers/input/keyboard/miyoo_kbd.c            | 121 +++-
+ drivers/video/fbdev/Kconfig                   |  10 +
+ drivers/video/fbdev/Makefile                  |   1 +
+ drivers/video/fbdev/rgb480x272fb.c            | 586 ++++++++++++++++++
+ sound/soc/suniv/miyoo.c                       |  14 +-
+ 7 files changed, 838 insertions(+), 6 deletions(-)
+ create mode 100644 arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
+ create mode 100644 drivers/video/fbdev/rgb480x272fb.c
+
+diff --git a/arch/arm/boot/dts/Makefile b/arch/arm/boot/dts/Makefile
+index 9960c2905..f73bf6a67 100644
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -1286,6 +1286,7 @@ dtb-$(CONFIG_MACH_SUN9I) += \
+ dtb-$(CONFIG_MACH_SUNIV) += \
+ 	suniv-f1c100s-miyoo.dtb \
+ 	suniv-f1c100s-miyoo-4bit.dtb \
++	suniv-f1c100s-f1gamestation.dtb \
+ 	suniv-f1c100s-licheepi-nano.dtb
+ dtb-$(CONFIG_ARCH_TEGRA_2x_SOC) += \
+ 	tegra20-acer-a500-picasso.dtb \
+diff --git a/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts b/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
+new file mode 100644
+index 000000000..5f8d9812d
+--- /dev/null
++++ b/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
+@@ -0,0 +1,111 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR X11)
++/*
++ * F1GameStation handheld (F1C200s, 480x272 RGB panel, 13 buttons).
++ * Based on the Lichee Pi Nano board (UART0 on PE0/PE1 for the console)
++ * with the MiyooCFW peripheral nodes from suniv.dtsi.
++ *
++ * Copyright 2018 Icenowy Zheng <icenowy@aosc.io>
++ */
++
++/dts-v1/;
++#include "suniv.dtsi"
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++	model = "F1GameStation";
++	compatible = "f1gamestation,f1gamestation", "licheepi,licheepi-nano", "allwinner,suniv-f1c100s";
++
++	aliases {
++		serial0 = &uart0;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	/* PE6 = PWM1 drives the backlight boost enable (LCD_BL) */
++	backlight {
++		compatible = "pwm-backlight";
++		pwms = <&pwm 1 58824 0>;
++		brightness-levels = <0 10 20 30 40 50 60 70 80 90 100>;
++		default-brightness-level = <5>;
++		status = "okay";
++	};
++
++	reg_vcc3v3: vcc3v3 {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++	};
++};
++
++&pwm {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pwm1_pins_a>;
++	status = "okay";
++};
++
++/* KEYADC (LRADC0) reads +BATT through a 200k/100k divider */
++&battery {
++	status = "okay";
++};
++
++/* driven by the rgb480x272fb module; PD0 and PD12 stay GPIO (buttons) */
++&tcon0 {
++	status = "okay";
++};
++
++/* DAT1-DAT3 are suspect on board 1, so run the card in 1-bit mode */
++&mmc0 {
++	vmmc-supply = <&reg_vcc3v3>;
++	bus-width = <1>;
++	broken-cd;
++	status = "okay";
++};
++
++/* NS4150B amplifier enable is PA0 (miyoo_snd=4); R49 pull-down not fitted */
++&codec {
++	status = "okay";
++};
++
++&uart0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart0_pins_a>;
++	status = "okay";
++};
++
++&spi0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&spi0_pins_a>;
++	status = "okay";
++
++	flash@0 {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		compatible = "winbond,w25q128", "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <40000000>;
++	};
++};
++
++&otg_sram {
++	status = "okay";
++};
++
++&usb_otg {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&usbphy {
++	status = "okay";
++};
++
++&cedar_ve {
++	status = "okay";
++};
++
++&ion {
++	status = "okay";
++};
+diff --git a/drivers/input/keyboard/miyoo_kbd.c b/drivers/input/keyboard/miyoo_kbd.c
+index 823bdf2ef..3771d9723 100644
+--- a/drivers/input/keyboard/miyoo_kbd.c
++++ b/drivers/input/keyboard/miyoo_kbd.c
+@@ -19,6 +19,7 @@
+ #include <linux/device.h>
+ #include <linux/module.h>
+ #include <linux/timer.h>
++#include <linux/delay.h>
+ #include <linux/gpio.h>
+ #include <linux/input.h>
+ #include <linux/kernel.h>
+@@ -50,6 +51,7 @@
+ //   5 -> V90 meaning additional L2/R2 physical buttons
+ //   6 -> Q20 meaning Lfunction/Rfunction button (similarly to Q90)
+ //   7 -> HYBRID meaning BittBoy shell with PocketGo components.
++//   8 -> F1GameStation, one GPIO per button (see f1gs_scan)
+ 
+ /* 
+  * Hardware map (as observed from the working code)
+@@ -128,6 +130,20 @@
+ #define IN_PC3  ((32 * 2) + 3)
+ #define IN_PA1  ((32 * 0) + 1)
+ 
++// F1GameStation (miyoo_ver 8), all buttons active low:
++// UP PE10, DOWN PE11, LEFT PE4, RIGHT PE5, A PE7, B PE8, X PE9, Y PD12,
++// START PE12, SELECT PD0, MENU PA1, L PA2, R PA3.
++// PA1-PA3 have no pull-ups (the PIO pull bits do nothing on those TP pins),
++// so they are read by charging the line high and sensing it right after
++// switching to input: a pressed button pulls it low at once.
++#define F1GS_PA_MASK  ((1 << 1) | (1 << 2) | (1 << 3))
++#define F1GS_PD_MASK  ((1 << 0) | (1 << 12))
++#define F1GS_PE_MASK  ((1 << 4) | (1 << 5) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12))
++#define F1GS_PA_DATA  (0 * 0x24 + 0x10)
++#define F1GS_PA_CFG0  (0 * 0x24 + 0x00)
++#define F1GS_PD_DATA  (3 * 0x24 + 0x10)
++#define F1GS_PE_DATA  (4 * 0x24 + 0x10)
++
+ #define USE_UART	1
+ 
+ #define NO_RAW	1
+@@ -222,10 +238,92 @@ static void report_key(uint32_t btn, uint32_t mask, uint8_t key)
+   }
+ }
+ 
++static void f1gs_set_input(uint32_t port, uint32_t mask)
++{
++  uint32_t n, reg, ret;
++
++  for(n=0; n<32; n++){
++    if(mask & (1 << n)){
++      reg = port * 0x24 + (n / 8) * 4;
++      ret = readl(gpio + reg);
++      ret&= ~(0x0f << ((n % 8) * 4));
++      writel(ret, gpio + reg);
++    }
++  }
++}
++
++static void f1gs_set_pullup(uint32_t port, uint32_t mask)
++{
++  uint32_t n, reg, ret;
++
++  for(n=0; n<32; n++){
++    if(mask & (1 << n)){
++      reg = port * 0x24 + 0x1c + (n / 16) * 4;
++      ret = readl(gpio + reg);
++      ret&= ~(0x03 << ((n % 16) * 2));
++      ret|= (0x01 << ((n % 16) * 2));
++      writel(ret, gpio + reg);
++    }
++  }
++}
++
++static void f1gs_init(void)
++{
++  f1gs_set_input(4, F1GS_PE_MASK);
++  f1gs_set_pullup(4, F1GS_PE_MASK);
++  f1gs_set_input(3, F1GS_PD_MASK);
++  f1gs_set_pullup(3, F1GS_PD_MASK);
++  f1gs_set_input(0, F1GS_PA_MASK);
++}
++
++static uint32_t f1gs_read_pa(void)
++{
++  uint32_t ret, cfg;
++  unsigned long flags;
++
++  local_irq_save(flags);
++  writel(readl(gpio + F1GS_PA_DATA) | F1GS_PA_MASK, gpio + F1GS_PA_DATA);
++  cfg = readl(gpio + F1GS_PA_CFG0) & ~0x0000fff0;
++  writel(cfg | 0x00001110, gpio + F1GS_PA_CFG0);
++  udelay(1);
++  writel(cfg, gpio + F1GS_PA_CFG0);
++  ret = readl(gpio + F1GS_PA_DATA);
++  local_irq_restore(flags);
++  return ret;
++}
++
++static uint32_t f1gs_scan(void)
++{
++  uint32_t pa, pd, pe, val=0;
++
++  pa = ~f1gs_read_pa();
++  pd = ~readl(gpio + F1GS_PD_DATA);
++  pe = ~readl(gpio + F1GS_PE_DATA);
++
++  if(pe & (1 << 10)) val|= MY_UP;
++  if(pe & (1 << 11)) val|= MY_DOWN;
++  if(pe & (1 << 4))  val|= MY_LEFT;
++  if(pe & (1 << 5))  val|= MY_RIGHT;
++  // MY_A/MY_B/MY_TA/MY_TB are the bottom/left/right/top face buttons
++  if(pe & (1 << 8))  val|= MY_A;
++  if(pd & (1 << 12)) val|= MY_B;
++  if(pe & (1 << 7))  val|= MY_TA;
++  if(pe & (1 << 9))  val|= MY_TB;
++  if(pe & (1 << 12)) val|= MY_START;
++  if(pd & (1 << 0))  val|= MY_SELECT;
++  if(pa & (1 << 1))  val|= MY_R;
++  if(pa & (1 << 2))  val|= MY_L1;
++  if(pa & (1 << 3))  val|= MY_R1;
++  return val;
++}
++
+ static void scan_handler(struct timer_list *timer)
+ {
+   static uint32_t pre=0;
+   uint32_t scan=0, val=0, debounce=0;
++  // keys already held when scanning starts are ignored until released,
++  // so a shorted switch cannot hold a key down forever
++  static uint32_t stuck=0xffffffff;
+   static uint32_t touchRead=0, touchReadPrev=0;
+   //extern void MIYOO_INCREASE_VOLUME(void);
+   //extern void MIYOO_DECREASE_VOLUME(void);
+@@ -550,6 +648,17 @@ static void scan_handler(struct timer_list *timer)
+               val|= MY_R;
+           }
+           break; 
++      case 8:
++          val = f1gs_scan();
++          if(stuck == 0xffffffff){
++              stuck = val;
++              if(stuck){
++                  printk("miyoo_kbd: ignoring keys held at start: 0x%x\n", stuck);
++              }
++          }
++          stuck&= val;
++          val&= ~stuck;
++          break;
+   }
+ 
+   if(lockkey){
+@@ -557,7 +666,7 @@ static void scan_handler(struct timer_list *timer)
+   }
+ 
+ #if !defined(RAW)
+-  if(miyoo_ver == 2)  {
++  if(miyoo_ver == 2 || miyoo_ver == 8)  {
+     if((val & MY_R) && (val & MY_B)) {
+       val&= ~MY_R;
+       val&= ~MY_B;
+@@ -756,7 +865,7 @@ static void scan_handler(struct timer_list *timer)
+       }
+ 	 	}
+ 	 	else if((val & MY_R) && (val & MY_A)){
+-      if(miyoo_ver == 2 || miyoo_ver == 3 || miyoo_ver == 5 || miyoo_ver == 6)  {
++      if(miyoo_ver == 2 || miyoo_ver == 3 || miyoo_ver == 5 || miyoo_ver == 6 || miyoo_ver == 8)  {
+ 	  	  hotkey_actioned = true;
+       //  if (hotkey_custom)
+ 	  	    hotkey = hotkey == 0 ? 4 : hotkey;
+@@ -770,7 +879,7 @@ static void scan_handler(struct timer_list *timer)
+       }
+ 		}
+ 		else if((val & MY_R) && (val & MY_TA)){
+-      if(miyoo_ver == 2 || miyoo_ver == 3 || miyoo_ver == 5 || miyoo_ver == 6)  {
++      if(miyoo_ver == 2 || miyoo_ver == 3 || miyoo_ver == 5 || miyoo_ver == 6 || miyoo_ver == 8)  {
+         hotkey_actioned = true;
+       //  if (hotkey_custom)
+           hotkey = hotkey == 0 ? 2 : hotkey;
+@@ -1000,6 +1109,11 @@ static int __init kbd_init(void)
+   // datasheet: https://linux-sunxi.org/images/8/85/Allwinner_F1C600_User_Manual_V1.0.pdf
+   // pages 116 onwards
+   gpio = ioremap(0x01c20800, 4096);      // PIO block
++  if (miyoo_ver == 8) {
++    // leave PC (SPI flash) and PE0/PE1 (UART0) alone
++    f1gs_init();
++    goto register_input;
++  }
+   ret = readl(gpio + (2 * 0x24 + 0x00)); // PC_CFG0
+   ret&= 0xffff0000;                      // set (PC0?) PC1 PC2 PC3 as inputs
+   writel(ret, gpio + (2 * 0x24 + 0x00)); // (somewhat dirty, writes into some reserved)
+@@ -1067,6 +1181,7 @@ static int __init kbd_init(void)
+ #endif
+   do_output_request(OUT_2, "gpio_pe8");
+   do_output_request(OUT_3, "gpio_pe9");
++register_input:
+   mydev = input_allocate_device();
+   set_bit(EV_KEY,mydev-> evbit);
+   set_bit(KEY_UP, mydev->keybit);
+diff --git a/drivers/video/fbdev/Kconfig b/drivers/video/fbdev/Kconfig
+index 61368637f..8f35cd011 100644
+--- a/drivers/video/fbdev/Kconfig
++++ b/drivers/video/fbdev/Kconfig
+@@ -2253,6 +2253,16 @@ config FB_R61520
+ 	help
+ 	  Framebuffer driver for Renesas R61520 SLCD panel.
+ 
++config FB_RGB480X272
++	tristate "480x272 parallel RGB panel framebuffer support"
++	depends on FB
++	select FB_SYS_FILLRECT
++	select FB_SYS_COPYAREA
++	select FB_SYS_IMAGEBLIT
++	help
++	  Framebuffer driver for 480x272 HV-sync RGB panels on the F1C100s
++	  TCON0 (F1GameStation). Shows the 320x240 frame centred.
++
+ config FB_GC9306
+ 	tristate "GC9306 SLCD framebuffer support"
+ 	depends on FB
+diff --git a/drivers/video/fbdev/Makefile b/drivers/video/fbdev/Makefile
+index f9ee311e1..739a3bddc 100644
+--- a/drivers/video/fbdev/Makefile
++++ b/drivers/video/fbdev/Makefile
+@@ -120,6 +120,7 @@ obj-$(CONFIG_FB_OPENCORES)	  += ocfb.o
+ obj-$(CONFIG_FB_SM712)		  += sm712fb.o
+ obj-$(CONFIG_FB_R61520)		  += r61520fb.o
+ obj-$(CONFIG_FB_GC9306)		  += gc9306fb.o
++obj-$(CONFIG_FB_RGB480X272)	  += rgb480x272fb.o
+ obj-$(CONFIG_FB_ST7789S)	  += st7789sfb.o
+ obj-$(CONFIG_FB_ST7789S_TE)	  += st7789sTEfb.o
+ obj-$(CONFIG_FB_RM68090)	  += rm68090fb.o
+diff --git a/drivers/video/fbdev/rgb480x272fb.c b/drivers/video/fbdev/rgb480x272fb.c
+new file mode 100644
+index 000000000..50418137f
+--- /dev/null
++++ b/drivers/video/fbdev/rgb480x272fb.c
+@@ -0,0 +1,586 @@
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option)any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * Framebuffer driver for a 480x272 parallel RGB (HV sync + DE) panel on
++ * TCON0, as used on the F1GameStation board. The panel is refreshed by the
++ * TCON continuously, so no panel controller init is needed. MiyooCFW
++ * software draws a 320x240 RGB565 frame; DEBE layer 0 shows it centred on
++ * the 480x272 output with a black border.
++ *
++ * Timings were measured on the board during bring-up:
++ *   PLL_VIDEO 198 MHz, DCLK = 198 / 22 = 9 MHz,
++ *   HT 535, HBP 47, HSPW 4, VT 292, VBP 16, VSPW 4 (~57.6 Hz).
++ */
++
++#include <linux/cdev.h>
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/fb.h>
++#include <linux/dma-mapping.h>
++#include <linux/device.h>
++#include <linux/platform_device.h>
++#include <linux/uaccess.h>
++#include <linux/pm_runtime.h>
++#include <linux/interrupt.h>
++#include <linux/wait.h>
++#include <linux/clk.h>
++#include <linux/console.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <linux/of.h>
++#include <linux/clk-provider.h>
++#include <asm/io.h>
++#include <asm/arch-suniv/cpu.h>
++#include <asm/arch-suniv/gpio.h>
++#include <asm/arch-suniv/lcdc.h>
++#include <asm/arch-suniv/debe.h>
++#include <asm/arch-suniv/clock.h>
++#include <asm/arch-suniv/common.h>
++
++#define PALETTE_SIZE 256
++#define DRIVER_NAME  "rgb480x272-fb"
++#define MIYOO_FB0_PUT_OSD     _IOWR(0x100, 0, unsigned long)
++#define MIYOO_FB0_SET_MODE    _IOWR(0x101, 0, unsigned long)
++#define MIYOO_FB0_GET_VER     _IOWR(0x102, 0, unsigned long)
++
++#define PANEL_W      480
++#define PANEL_H      272
++#define FB_W         320
++#define FB_H         240
++#define FB_FRAMES    4
++#define FB_LINE      (FB_W * 2)
++#define FB_FRAME     (FB_LINE * FB_H)
++
++static uint32_t version=1;
++module_param(version,uint,0660);
++MODULE_PARM_DESC(version, "Value returned by MIYOO_FB0_GET_VER");
++
++struct myfb_par {
++    struct device *dev;
++    struct platform_device *pdev;
++
++    resource_size_t p_palette_base;
++    unsigned short *v_palette_base;
++
++    int yoffset;
++    void *vram_virt;
++    uint32_t vram_size;
++    dma_addr_t vram_phys;
++
++    int bpp;
++    int lcdc_irq;
++    uint32_t vsync_count;
++    u32 pseudo_palette[16];
++    struct fb_videomode mode;
++};
++
++struct suniv_iomm {
++    uint8_t *ccm;
++    uint8_t *gpio;
++    uint8_t *lcdc;
++    uint8_t *debe;
++};
++static int major = -1;
++static struct cdev mycdev;
++static struct class *myclass = NULL;
++static struct suniv_iomm iomm={0};
++static struct myfb_par *mypar=NULL;
++static struct fb_var_screeninfo myfb_var={0};
++static DECLARE_WAIT_QUEUE_HEAD(wait_vsync_queue);
++
++static struct fb_fix_screeninfo myfb_fix = {
++        .id = DRIVER_NAME,
++        .type = FB_TYPE_PACKED_PIXELS,
++        .type_aux = 0,
++        .visual = FB_VISUAL_TRUECOLOR,
++        .xpanstep = 0,
++        .ypanstep = 1,
++        .ywrapstep = 0,
++        .accel = FB_ACCEL_NONE
++};
++
++// PD1-PD11 and PD13-PD21 are LCD (function 2). PD0 (SELECT) and PD12 (Y)
++// are buttons, so their nibbles are left alone.
++static void suniv_gpio_init(void)
++{
++    uint32_t r=0;
++
++    r = readl(iomm.gpio + PD_CFG0);
++    r&= 0x0000000f;
++    r|= 0x22222220;
++    writel(r, iomm.gpio + PD_CFG0);
++
++    r = readl(iomm.gpio + PD_CFG1);
++    r&= 0x000f0000;
++    r|= 0x22202222;
++    writel(r, iomm.gpio + PD_CFG1);
++
++    r = readl(iomm.gpio + PD_CFG2);
++    r&= 0xff000000;
++    r|= 0x00222222;
++    writel(r, iomm.gpio + PD_CFG2);
++}
++
++static void debe_set_frame(struct myfb_par *par)
++{
++    uint32_t addr = par->vram_phys + par->yoffset * FB_LINE;
++
++    writel(addr << 3, iomm.debe + DEBE_LAY0_FB_ADDR_REG);
++    writel(addr >> 29, iomm.debe + DEBE_LAY0_FB_HI_ADDR_REG);
++    // latched by the DEBE at the next frame start
++    suniv_setbits(iomm.debe + DEBE_REGBUFF_CTRL_REG, (1 << 0));
++}
++
++static irqreturn_t lcdc_irq_handler(int irq, void *arg)
++{
++    struct myfb_par *par = arg;
++
++    if((readl(iomm.lcdc + TCON_INT_REG0) & (1 << 15)) == 0){
++        return IRQ_NONE;
++    }
++    suniv_clrbits(iomm.lcdc + TCON_INT_REG0, (1 << 15));
++    par->vsync_count++;
++    wake_up_interruptible_all(&wait_vsync_queue);
++    return IRQ_HANDLED;
++}
++
++static int wait_for_vsync(struct myfb_par *par)
++{
++    uint32_t count = par->vsync_count;
++    long t = wait_event_interruptible_timeout(wait_vsync_queue, count != par->vsync_count, HZ / 10);
++
++    if(t < 0){
++        return t;
++    }
++    return t == 0 ? -ETIMEDOUT : 0;
++}
++
++static void suniv_cpu_init(struct myfb_par *par)
++{
++    uint32_t i;
++
++    // PLL_VIDEO = 24 MHz * 33 / 4 = 198 MHz
++    writel(0x81002003, iomm.ccm + PLL_VIDEO_CTRL_REG);
++    while((readl(iomm.ccm + PLL_VIDEO_CTRL_REG) & (1 << 28)) == 0){}
++
++    suniv_setbits(iomm.ccm + DRAM_GATING_REG, (1 << 26));
++    writel((1 << 31), iomm.ccm + BE_CLK_REG);
++    writel((1 << 31), iomm.ccm + TCON_CLK_REG);
++    suniv_setbits(iomm.ccm + BUS_CLK_GATING_REG1, (1 << 12) | (1 << 4));
++    suniv_setbits(iomm.ccm + BUS_SOFT_RST_REG1, (1 << 12) | (1 << 4));
++    // DEBE registers hold random data after reset
++    for(i=0x0800; i<0x1000; i+=4){
++        writel(0, iomm.debe + i);
++    }
++}
++
++static void suniv_lcdc_init(struct myfb_par *par)
++{
++    writel(0, iomm.lcdc + TCON_CTRL_REG);
++    writel(0, iomm.lcdc + TCON_INT_REG0);
++    writel(0, iomm.lcdc + TCON_CLK_CTRL_REG);
++    writel(0xffffffff, iomm.lcdc + TCON0_IO_CTRL_REG1);
++    writel(0xffffffff, iomm.lcdc + TCON1_IO_CTRL_REG1);
++
++    suniv_setbits(iomm.debe + DEBE_MODE_CTRL_REG, (1 << 0));
++    writel(0, iomm.debe + DEBE_COLOR_CTRL_REG);
++    writel(((PANEL_H - 1) << 16) | (PANEL_W - 1), iomm.debe + DEBE_DISP_SIZE_REG);
++    writel(((FB_H - 1) << 16) | (FB_W - 1), iomm.debe + DEBE_LAY0_SIZE_REG);
++    writel((((PANEL_H - FB_H) / 2) << 16) | ((PANEL_W - FB_W) / 2), iomm.debe + DEBE_LAY0_CODNT_REG);
++    writel(FB_W << 4, iomm.debe + DEBE_LAY0_LINEWIDTH_REG);
++    writel((5 << 8), iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
++    debe_set_frame(par);
++    suniv_setbits(iomm.debe + DEBE_MODE_CTRL_REG, (1 << 8));
++    suniv_setbits(iomm.debe + DEBE_REGBUFF_CTRL_REG, (1 << 1));
++    suniv_setbits(iomm.debe + DEBE_REGBUFF_CTRL_REG, (1 << 0));
++    suniv_setbits(iomm.debe + DEBE_MODE_CTRL_REG, (1 << 1));
++
++    // HV mode, start delay 20, DCLK = PLL_VIDEO / 22
++    writel((1 << 31) | (20 << 4), iomm.lcdc + TCON0_CTRL_REG);
++    writel((0xf << 28) | (22 << 0), iomm.lcdc + TCON_CLK_CTRL_REG);
++    writel(((PANEL_W - 1) << 16) | (PANEL_H - 1), iomm.lcdc + TCON0_BASIC_TIMING_REG0);
++    writel(((535 - 1) << 16) | (47 - 1), iomm.lcdc + TCON0_BASIC_TIMING_REG1);
++    writel(((292 * 2) << 16) | (16 - 1), iomm.lcdc + TCON0_BASIC_TIMING_REG2);
++    writel(((4 - 1) << 16) | (4 - 1), iomm.lcdc + TCON0_BASIC_TIMING_REG3);
++    writel(0, iomm.lcdc + TCON0_HV_TIMING_REG);
++    writel(0, iomm.lcdc + TCON0_CPU_IF_REG);
++    writel(0, iomm.lcdc + TCON_FRM_CTRL_REG);
++    // DE active high, HSYNC/VSYNC active low, DCLK phase as measured
++    writel(0x13000000, iomm.lcdc + TCON0_IO_CTRL_REG0);
++    writel(0, iomm.lcdc + TCON0_IO_CTRL_REG1);
++
++    suniv_gpio_init();
++    suniv_setbits(iomm.lcdc + TCON_CTRL_REG, (1 << 31));
++    suniv_setbits(iomm.lcdc + TCON_INT_REG0, (1 << 31));
++}
++
++static void suniv_enable_irq(struct myfb_par *par)
++{
++    int ret=0;
++
++    par->lcdc_irq = platform_get_irq(par->pdev, 0);
++    if(par->lcdc_irq < 0){
++        printk("%s, failed to get irq number for lcdc irq\n", __func__);
++    }
++    else{
++        ret = request_irq(par->lcdc_irq, lcdc_irq_handler, IRQF_SHARED, "lcdc_irq", par);
++        if(ret){
++            printk("%s, failed to register lcdc interrupt(%d)\n", __func__, par->lcdc_irq);
++            par->lcdc_irq = -1;
++        }
++    }
++}
++
++#define CNVT_TOHW(val, width) ((((val) << (width)) + 0x7FFF - (val)) >> 16)
++static int myfb_setcolreg(unsigned regno, unsigned red, unsigned green, unsigned blue, unsigned transp, struct fb_info *info)
++{
++    if(regno >= 16){
++        return -EINVAL;
++    }
++    red = CNVT_TOHW(red, info->var.red.length);
++    blue = CNVT_TOHW(blue, info->var.blue.length);
++    green = CNVT_TOHW(green, info->var.green.length);
++    ((u32*)(info->pseudo_palette))[regno] = (red << info->var.red.offset) | (green << info->var.green.offset) | (blue << info->var.blue.offset);
++    return 0;
++}
++#undef CNVT_TOHW
++
++static int myfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
++{
++    int bpp = var->bits_per_pixel >> 3;
++    struct myfb_par *par = info->par;
++    unsigned long line_size = var->xres_virtual * bpp;
++
++    if((var->xres != FB_W) || (var->yres != FB_H) || (var->bits_per_pixel != 16)){
++        return -EINVAL;
++    }
++
++    var->transp.offset = 0;
++    var->transp.length = 0;
++    var->red.offset = 11;
++    var->red.length = 5;
++    var->green.offset = 5;
++    var->green.length = 6;
++    var->blue.offset = 0;
++    var->blue.length = 5;
++    var->red.msb_right = 0;
++    var->green.msb_right = 0;
++    var->blue.msb_right = 0;
++    var->transp.msb_right = 0;
++    if(line_size * var->yres_virtual > par->vram_size){
++        var->yres_virtual = par->vram_size / line_size;
++    }
++    if(var->yres > var->yres_virtual){
++        var->yres = var->yres_virtual;
++    }
++    if(var->xres > var->xres_virtual){
++        var->xres = var->xres_virtual;
++    }
++    if(var->xres + var->xoffset > var->xres_virtual){
++        var->xoffset = var->xres_virtual - var->xres;
++    }
++    if(var->yres + var->yoffset > var->yres_virtual){
++        var->yoffset = var->yres_virtual - var->yres;
++    }
++    return 0;
++}
++
++static int myfb_set_par(struct fb_info *info)
++{
++    struct myfb_par *par = info->par;
++
++    fb_var_to_videomode(&par->mode, &info->var);
++    par->yoffset = info->var.yoffset;
++    par->bpp = info->var.bits_per_pixel;
++    info->fix.visual = FB_VISUAL_TRUECOLOR;
++    info->fix.line_length = (par->mode.xres * par->bpp) / 8;
++    writel((5 << 8), iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
++    debe_set_frame(par);
++    return 0;
++}
++
++static int myfb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
++{
++    switch(cmd){
++        case FBIO_WAITFORVSYNC:
++            return wait_for_vsync(info->par);
++    }
++    return 0;
++}
++
++static int myfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
++{
++    const unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
++    const unsigned long size = vma->vm_end - vma->vm_start;
++
++    if(offset + size > info->fix.smem_len){
++        return -EINVAL;
++    }
++
++    if(remap_pfn_range(vma, vma->vm_start, (info->fix.smem_start + offset) >> PAGE_SHIFT, size, vma->vm_page_prot)){
++        return -EAGAIN;
++    }
++    return 0;
++}
++
++static int myfb_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
++{
++    struct myfb_par *par = info->par;
++
++    if((var->xoffset != info->var.xoffset) || (var->yoffset != info->var.yoffset)){
++        info->var.xoffset = var->xoffset;
++        info->var.yoffset = var->yoffset;
++        par->yoffset = var->yoffset;
++        debe_set_frame(par);
++    }
++    return 0;
++}
++
++static struct fb_ops myfb_ops = {
++        .owner          = THIS_MODULE,
++        .fb_check_var   = myfb_check_var,
++        .fb_set_par     = myfb_set_par,
++        .fb_setcolreg   = myfb_setcolreg,
++        .fb_pan_display = myfb_pan_display,
++        .fb_ioctl       = myfb_ioctl,
++        .fb_mmap        = myfb_mmap,
++
++        .fb_fillrect  = sys_fillrect,
++        .fb_copyarea  = sys_copyarea,
++        .fb_imageblit = sys_imageblit,
++};
++
++static int myfb_probe(struct platform_device *device)
++{
++    int ret=0;
++    struct fb_info *info=NULL;
++    struct myfb_par *par=NULL;
++    struct fb_videomode *mode=NULL;
++
++    mode = devm_kzalloc(&device->dev, sizeof(struct fb_videomode), GFP_KERNEL);
++    if(mode == NULL){
++        return -ENOMEM;
++    }
++    mode->name = "320x240";
++    mode->xres = FB_W;
++    mode->yres = FB_H;
++    mode->vmode = FB_VMODE_NONINTERLACED;
++    pm_runtime_enable(&device->dev);
++    pm_runtime_get_sync(&device->dev);
++
++    info = framebuffer_alloc(sizeof(struct myfb_par), &device->dev);
++    if(!info){
++        return -ENOMEM;
++    }
++
++    par = info->par;
++    par->pdev = device;
++    par->dev = &device->dev;
++    par->bpp = 16;
++    fb_videomode_to_var(&myfb_var, mode);
++
++    par->vram_size = FB_FRAME * FB_FRAMES;
++    par->vram_virt = dma_alloc_coherent(par->dev, par->vram_size, (resource_size_t*)&par->vram_phys, GFP_KERNEL | GFP_DMA);
++    if(!par->vram_virt){
++        return -EINVAL;
++    }
++    memset(par->vram_virt, 0, par->vram_size);
++    info->screen_base = (char __iomem*)par->vram_virt;
++    myfb_fix.smem_start = par->vram_phys;
++    myfb_fix.smem_len = par->vram_size;
++    myfb_fix.line_length = FB_LINE;
++
++    par->v_palette_base = dma_alloc_coherent(par->dev, PALETTE_SIZE, (resource_size_t*)&par->p_palette_base, GFP_KERNEL | GFP_DMA);
++    if(!par->v_palette_base){
++        return -EINVAL;
++    }
++    memset(par->v_palette_base, 0, PALETTE_SIZE);
++    myfb_var.grayscale = 0;
++    myfb_var.bits_per_pixel = par->bpp;
++
++    info->flags = FBINFO_FLAG_DEFAULT;
++    info->fix = myfb_fix;
++    info->var = myfb_var;
++    info->fbops = &myfb_ops;
++    info->pseudo_palette = par->pseudo_palette;
++    info->fix.visual = (info->var.bits_per_pixel <= 8) ? FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
++    ret = fb_alloc_cmap(&info->cmap, PALETTE_SIZE, 0);
++    if(ret){
++        return -EINVAL;
++    }
++    info->cmap.len = 32;
++
++    mypar = par;
++    for(ret=0; ret<of_clk_get_parent_count(device->dev.of_node); ret++){
++        clk_prepare_enable(of_clk_get(device->dev.of_node, ret));
++    }
++    suniv_cpu_init(par);
++    suniv_lcdc_init(par);
++    suniv_enable_irq(par);
++
++    myfb_var.activate = FB_ACTIVATE_FORCE;
++    fb_set_var(info, &myfb_var);
++    dev_set_drvdata(&device->dev, info);
++    if(register_framebuffer(info) < 0){
++        return -EINVAL;
++    }
++    fb_prepare_logo(info, 0);
++    fb_show_logo(info, 0);
++    return 0;
++}
++
++static int myfb_remove(struct platform_device *dev)
++{
++    struct fb_info *info = dev_get_drvdata(&dev->dev);
++    struct myfb_par *par;
++
++    if(info){
++        par = info->par;
++        suniv_clrbits(iomm.lcdc + TCON_INT_REG0, (1 << 31));
++        if(par->lcdc_irq >= 0){
++            free_irq(par->lcdc_irq, par);
++        }
++        suniv_clrbits(iomm.lcdc + TCON_CTRL_REG, (1 << 31));
++        unregister_framebuffer(info);
++        fb_dealloc_cmap(&info->cmap);
++        dma_free_coherent(par->dev, PALETTE_SIZE, par->v_palette_base, par->p_palette_base);
++        dma_free_coherent(par->dev, par->vram_size, par->vram_virt, par->vram_phys);
++        pm_runtime_put_sync(&dev->dev);
++        pm_runtime_disable(&dev->dev);
++        framebuffer_release(info);
++    }
++    return 0;
++}
++
++static int myfb_suspend(struct platform_device *dev, pm_message_t state)
++{
++    struct fb_info *info = platform_get_drvdata(dev);
++
++    console_lock();
++    fb_set_suspend(info, 1);
++    pm_runtime_put_sync(&dev->dev);
++    console_unlock();
++    return 0;
++}
++
++static int myfb_resume(struct platform_device *dev)
++{
++    struct fb_info *info = platform_get_drvdata(dev);
++
++    console_lock();
++    pm_runtime_get_sync(&dev->dev);
++    fb_set_suspend(info, 0);
++    console_unlock();
++    return 0;
++}
++
++static const struct of_device_id fb_of_match[] = {
++        {
++                .compatible = "allwinner,suniv-f1c100s-tcon0",
++        },{}
++};
++MODULE_DEVICE_TABLE(of, fb_of_match);
++
++static struct platform_driver fb_driver = {
++        .probe    = myfb_probe,
++        .remove   = myfb_remove,
++        .suspend  = myfb_suspend,
++        .resume   = myfb_resume,
++        .driver = {
++                .name   = DRIVER_NAME,
++                .owner  = THIS_MODULE,
++                .of_match_table = of_match_ptr(fb_of_match),
++        },
++};
++
++static void suniv_ioremap(void)
++{
++    iomm.ccm = (uint8_t*)ioremap(SUNIV_CCM_BASE, 4096);
++    iomm.gpio = (uint8_t*)ioremap(SUNIV_GPIO_BASE, 4096);
++    iomm.lcdc = (uint8_t*)ioremap(SUNIV_LCDC_BASE, 4096);
++    iomm.debe = (uint8_t*)ioremap(SUNIV_DEBE_BASE, 4096);
++}
++
++static void suniv_iounmap(void)
++{
++    iounmap(iomm.ccm);
++    iounmap(iomm.gpio);
++    iounmap(iomm.lcdc);
++    iounmap(iomm.debe);
++}
++
++static int myopen(struct inode *inode, struct file *file)
++{
++    return 0;
++}
++
++static int myclose(struct inode *inode, struct file *file)
++{
++    return 0;
++}
++
++static long myioctl(struct file *filp, unsigned int cmd, unsigned long arg)
++{
++    int32_t bpp, ret;
++
++    switch(cmd){
++        case MIYOO_FB0_PUT_OSD:
++            break;
++        case MIYOO_FB0_SET_MODE:
++            // same layer formats as the other MiyooCFW panel drivers
++            bpp = (arg & 0xffff);
++            if(bpp != 16){
++                writel((5 << 8), iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
++            }
++            else{
++                writel((7 << 8) | 4, iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
++            }
++            break;
++        case MIYOO_FB0_GET_VER:
++            ret = copy_to_user((void*)arg, &version, sizeof(uint32_t));
++            break;
++    }
++    return 0;
++}
++
++static const struct file_operations myfops = {
++        .owner = THIS_MODULE,
++        .open = myopen,
++        .release = myclose,
++        .unlocked_ioctl = myioctl,
++};
++
++static int __init fb_init(void)
++{
++    alloc_chrdev_region(&major, 0, 1, "miyoo_fb0");
++    myclass = class_create(THIS_MODULE, "miyoo_fb0");
++    device_create(myclass, NULL, major, NULL, "miyoo_fb0");
++    cdev_init(&mycdev, &myfops);
++    cdev_add(&mycdev, major, 1);
++    suniv_ioremap();
++    return platform_driver_register(&fb_driver);
++}
++
++static void __exit fb_cleanup(void)
++{
++    platform_driver_unregister(&fb_driver);
++    suniv_iounmap();
++    device_destroy(myclass, major);
++    cdev_del(&mycdev);
++    class_destroy(myclass);
++    unregister_chrdev_region(major, 1);
++}
++
++module_init(fb_init);
++module_exit(fb_cleanup);
++
++MODULE_DESCRIPTION("Framebuffer driver for 480x272 RGB panels (320x240 centred)");
++MODULE_LICENSE("GPL");
+diff --git a/sound/soc/suniv/miyoo.c b/sound/soc/suniv/miyoo.c
+index 889e3a315..495d224e1 100644
+--- a/sound/soc/suniv/miyoo.c
++++ b/sound/soc/suniv/miyoo.c
+@@ -141,6 +141,14 @@ static void suniv_gpio_init(void)
+         writel(ret, iomm.gpio + PD_CFG1);
+         suniv_setbits(iomm.gpio + PD_DATA, (1 << 9));
+         break;
++      case 4:
++        // F1GameStation: PA0 = AMP_EN, no jack detect (PA2 is the L button)
++        ret = readl(iomm.gpio + PA_CFG0);
++        ret &= 0xfffffff0;
++        ret |= 0x00000001;
++        writel(ret, iomm.gpio + PA_CFG0);
++        suniv_setbits(iomm.gpio + PA_DATA, (1 << 0));
++        break;
+   }
+ 
+ }
+@@ -151,7 +159,7 @@ static irqreturn_t dma_irq_handler(int irq, void *arg)
+   struct snd_pcm_substream *substream = arg;
+ 
+ #if defined(USE_EARPHONE)
+-  ret = readl(iomm.gpio + PA_DATA);
++  ret = (miyoo_snd == 4) ? 4 : readl(iomm.gpio + PA_DATA);
+   if(ret & 4){
+     suniv_setbits(iomm.gpio + PA_DATA, (1 << 0));
+   }
+@@ -478,7 +486,7 @@ static long myioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 
+   switch(cmd){
+   case MIYOO_SND_JACK_STATUS:
+-    ret = readl(iomm.gpio + PA_DATA);
++    ret = (miyoo_snd == 4) ? 4 : readl(iomm.gpio + PA_DATA);
+     if(ret & 4)
+       jack = false;
+     else
+@@ -486,7 +494,7 @@ static long myioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+     ret = copy_to_user((void*)arg, &jack, sizeof(bool));
+     break;
+   case MIYOO_TV_JACK_STATUS:
+-    ret = readl(iomm.gpio + PA_DATA);
++    ret = (miyoo_snd == 4) ? 4 : readl(iomm.gpio + PA_DATA);
+     if(miyoo_tvjack){
+       // no info about separate tvjack PIN data
+     } else {
+-- 
+2.54.0 (Apple Git-157)
+

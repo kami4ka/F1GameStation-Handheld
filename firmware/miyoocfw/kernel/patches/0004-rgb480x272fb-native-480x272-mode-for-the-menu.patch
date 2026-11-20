@@ -1,0 +1,192 @@
+From 074cb915ecfe4e5bc00c0f5072060dd93a15cdf0 Mon Sep 17 00:00:00 2001
+From: Oleg Kulyk <5595029+kami4ka@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 15:05:58 +0000
+Subject: [PATCH 4/4] rgb480x272fb: native 480x272 mode for the menu
+
+The panel now takes two modes: 480x272 fills it (gmenu2x built for the
+F1GameStation), and 320x240 is shown centred as before, so games and
+apps that ask for the usual MiyooCFW size are unchanged. set_par moves
+and resizes DEBE layer 0 when the mode changes; the rotation thread
+follows the current size.
+---
+ drivers/video/fbdev/rgb480x272fb.c | 73 +++++++++++++++++++++---------
+ 1 file changed, 51 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/video/fbdev/rgb480x272fb.c b/drivers/video/fbdev/rgb480x272fb.c
+index f32644027..98146e87f 100644
+--- a/drivers/video/fbdev/rgb480x272fb.c
++++ b/drivers/video/fbdev/rgb480x272fb.c
+@@ -11,9 +11,11 @@
+  *
+  * Framebuffer driver for a 480x272 parallel RGB (HV sync + DE) panel on
+  * TCON0, as used on the F1GameStation board. The panel is refreshed by the
+- * TCON continuously, so no panel controller init is needed. MiyooCFW
+- * software draws a 320x240 RGB565 frame; DEBE layer 0 shows it centred on
+- * the 480x272 output with a black border.
++ * TCON continuously, so no panel controller init is needed. Two RGB565
++ * modes: 320x240 (the default, what MiyooCFW games use), shown centred on
++ * the 480x272 output with a black border, and 480x272, which fills the
++ * panel (for menus built for it). Programs switch with FBIOPUT_VSCREENINFO,
++ * e.g. SDL_SetVideoMode().
+  *
+  * The panel has no scan-direction pins and the DEBE cannot rotate, so with
+  * rotate=1 (the default) a kernel thread copies each frame rotated by 180
+@@ -66,6 +68,8 @@
+ #define FB_FRAMES    4
+ #define FB_LINE      (FB_W * 2)
+ #define FB_FRAME     (FB_LINE * FB_H)
++// largest mode: the whole panel (used by the menu UI)
++#define SCAN_FRAME   (PANEL_W * PANEL_H * 2)
+ 
+ static uint32_t version=1;
+ module_param(version,uint,0660);
+@@ -101,6 +105,9 @@ struct myfb_par {
+     uint32_t rotate_us;
+     u32 pseudo_palette[16];
+     struct fb_videomode mode;
++    // current mode: 320x240 (centred, games) or 480x272 (full panel)
++    int w;
++    int h;
+ };
+ 
+ struct suniv_iomm {
+@@ -162,23 +169,32 @@ static void debe_set_frame(struct myfb_par *par)
+ {
+     // when rotating, rotate_thread owns the layer address
+     if(!par->rotate_task){
+-        debe_set_addr(par->vram_phys + par->yoffset * FB_LINE);
++        debe_set_addr(par->vram_phys + par->yoffset * par->w * 2);
+     }
+ }
+ 
+-// Copy one 320x240 RGB565 frame rotated by 180 degrees. The source is
++// size and position of layer 0 for the current mode, centred on the panel
++static void debe_set_layer(struct myfb_par *par)
++{
++    writel(((par->h - 1) << 16) | (par->w - 1), iomm.debe + DEBE_LAY0_SIZE_REG);
++    writel((((PANEL_H - par->h) / 2) << 16) | ((PANEL_W - par->w) / 2), iomm.debe + DEBE_LAY0_CODNT_REG);
++    writel(par->w << 4, iomm.debe + DEBE_LAY0_LINEWIDTH_REG);
++    suniv_setbits(iomm.debe + DEBE_REGBUFF_CTRL_REG, (1 << 0));
++}
++
++// Copy one w x h RGB565 frame rotated by 180 degrees. The source is
+ // uncached, so each line is read with one burst copy into a cached buffer.
+-static void rotate_frame(uint32_t *dst, const uint8_t *src)
++static void rotate_frame(uint32_t *dst, const uint8_t *src, int fw, int fh)
+ {
+-    static uint32_t line[FB_W / 2];
++    static uint32_t line[PANEL_W / 2];
+     int y, x;
+ 
+-    for(y=0; y<FB_H; y++){
+-        uint32_t *d = dst + (FB_H - 1 - y) * (FB_W / 2);
++    for(y=0; y<fh; y++){
++        uint32_t *d = dst + (fh - 1 - y) * (fw / 2);
+ 
+-        memcpy(line, src + y * FB_LINE, FB_LINE);
+-        for(x=0; x<FB_W/2; x++){
+-            uint32_t w = line[FB_W / 2 - 1 - x];
++        memcpy(line, src + y * fw * 2, fw * 2);
++        for(x=0; x<fw/2; x++){
++            uint32_t w = line[fw / 2 - 1 - x];
+             d[x] = (w >> 16) | (w << 16);
+         }
+     }
+@@ -189,19 +205,22 @@ static int rotate_thread(void *arg)
+     struct myfb_par *par = arg;
+     uint32_t seen = par->vsync_count;
+     ktime_t t0;
++    int fw, fh;
+ 
+     while(!kthread_should_stop()){
+         wait_event_interruptible_timeout(wait_vsync_queue, seen != par->vsync_count || kthread_should_stop(), HZ / 10);
+         seen = par->vsync_count;
++        fw = READ_ONCE(par->w);
++        fh = READ_ONCE(par->h);
+         if(!rotate){
+-            debe_set_addr(par->vram_phys + par->yoffset * FB_LINE);
++            debe_set_addr(par->vram_phys + par->yoffset * fw * 2);
+             par->rotate_us = 0;
+             continue;
+         }
+         t0 = ktime_get();
+         par->scan_idx^= 1;
+-        rotate_frame(par->scan_virt + par->scan_idx * FB_FRAME, par->vram_virt + par->yoffset * FB_LINE);
+-        debe_set_addr(par->scan_phys + par->scan_idx * FB_FRAME);
++        rotate_frame(par->scan_virt + par->scan_idx * SCAN_FRAME, par->vram_virt + par->yoffset * fw * 2, fw, fh);
++        debe_set_addr(par->scan_phys + par->scan_idx * SCAN_FRAME);
+         par->rotate_us = ktime_us_delta(ktime_get(), t0);
+     }
+     return 0;
+@@ -267,9 +286,7 @@ static void suniv_lcdc_init(struct myfb_par *par)
+     suniv_setbits(iomm.debe + DEBE_MODE_CTRL_REG, (1 << 0));
+     writel(0, iomm.debe + DEBE_COLOR_CTRL_REG);
+     writel(((PANEL_H - 1) << 16) | (PANEL_W - 1), iomm.debe + DEBE_DISP_SIZE_REG);
+-    writel(((FB_H - 1) << 16) | (FB_W - 1), iomm.debe + DEBE_LAY0_SIZE_REG);
+-    writel((((PANEL_H - FB_H) / 2) << 16) | ((PANEL_W - FB_W) / 2), iomm.debe + DEBE_LAY0_CODNT_REG);
+-    writel(FB_W << 4, iomm.debe + DEBE_LAY0_LINEWIDTH_REG);
++    debe_set_layer(par);
+     writel((5 << 8), iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
+     debe_set_frame(par);
+     suniv_setbits(iomm.debe + DEBE_MODE_CTRL_REG, (1 << 8));
+@@ -333,9 +350,14 @@ static int myfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
+     struct myfb_par *par = info->par;
+     unsigned long line_size = var->xres_virtual * bpp;
+ 
+-    if((var->xres != FB_W) || (var->yres != FB_H) || (var->bits_per_pixel != 16)){
++    // 320x240 is shown centred (MiyooCFW games), 480x272 fills the panel
++    if(!((var->xres == FB_W && var->yres == FB_H) || (var->xres == PANEL_W && var->yres == PANEL_H)) || (var->bits_per_pixel != 16)){
+         return -EINVAL;
+     }
++    if(var->xres_virtual != var->xres){
++        var->xres_virtual = var->xres;
++        line_size = var->xres_virtual * bpp;
++    }
+ 
+     var->transp.offset = 0;
+     var->transp.length = 0;
+@@ -376,6 +398,11 @@ static int myfb_set_par(struct fb_info *info)
+     par->bpp = info->var.bits_per_pixel;
+     info->fix.visual = FB_VISUAL_TRUECOLOR;
+     info->fix.line_length = (par->mode.xres * par->bpp) / 8;
++    if(par->w != info->var.xres || par->h != info->var.yres){
++        WRITE_ONCE(par->w, info->var.xres);
++        WRITE_ONCE(par->h, info->var.yres);
++        debe_set_layer(par);
++    }
+     writel((5 << 8), iomm.debe + DEBE_LAY0_ATT_CTRL_REG1);
+     debe_set_frame(par);
+     return 0;
+@@ -459,6 +486,8 @@ static int myfb_probe(struct platform_device *device)
+     par->pdev = device;
+     par->dev = &device->dev;
+     par->bpp = 16;
++    par->w = FB_W;
++    par->h = FB_H;
+     fb_videomode_to_var(&myfb_var, mode);
+ 
+     par->vram_size = FB_FRAME * FB_FRAMES;
+@@ -501,9 +530,9 @@ static int myfb_probe(struct platform_device *device)
+     suniv_enable_irq(par);
+     // the thread also runs with rotate=0 so that flip can be turned on later
+     if(par->lcdc_irq >= 0){
+-        par->scan_virt = dma_alloc_coherent(par->dev, FB_FRAME * 2, &par->scan_phys, GFP_KERNEL | GFP_DMA);
++        par->scan_virt = dma_alloc_coherent(par->dev, SCAN_FRAME * 2, &par->scan_phys, GFP_KERNEL | GFP_DMA);
+         if(par->scan_virt){
+-            memset(par->scan_virt, 0, FB_FRAME * 2);
++            memset(par->scan_virt, 0, SCAN_FRAME * 2);
+             par->rotate_task = kthread_run(rotate_thread, par, "rgbfb_rotate");
+             if(IS_ERR(par->rotate_task)){
+                 par->rotate_task = NULL;
+@@ -547,7 +576,7 @@ static int myfb_remove(struct platform_device *dev)
+         dma_free_coherent(par->dev, PALETTE_SIZE, par->v_palette_base, par->p_palette_base);
+         dma_free_coherent(par->dev, par->vram_size, par->vram_virt, par->vram_phys);
+         if(par->scan_virt){
+-            dma_free_coherent(par->dev, FB_FRAME * 2, par->scan_virt, par->scan_phys);
++            dma_free_coherent(par->dev, SCAN_FRAME * 2, par->scan_virt, par->scan_phys);
+         }
+         pm_runtime_put_sync(&dev->dev);
+         pm_runtime_disable(&dev->dev);
+-- 
+2.43.0
+

@@ -1,0 +1,39 @@
+# Publishes site/ to GitHub Pages, together with the KiCad sources (for
+# KiCanvas) and the interactive BOM. Enable it once in Settings > Pages >
+# Source: GitHub Actions.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**, hardware/kicad/**, hardware/production/F1GameStation-ibom.html, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/kicad
+          cp -r site/index.html site/images site/models _site/
+          cp hardware/kicad/*.kicad_sch hardware/kicad/*.kicad_pcb hardware/kicad/*.kicad_pro _site/kicad/
+          cp hardware/production/F1GameStation-ibom.html _site/ibom.html
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F1GameStation · open handheld</title>
+<meta name="description" content="An open-source 8/16-bit handheld built on the Allwinner F1C200s: KiCad board, 3D-printed case, MiyooCFW firmware.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='8' width='28' height='16' rx='6' fill='%23d9893f'/%3E%3Ccircle cx='9' cy='16' r='3' fill='%23111'/%3E%3Ccircle cx='23' cy='14' r='1.6' fill='%23111'/%3E%3Ccircle cx='25' cy='18' r='1.6' fill='%23111'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f0e;
+  --bg-2: #141816;
+  --panel: #181d1b;
+  --line: #2a312e;
+  --ink: #e9ece6;
+  --ink-2: #a6ada7;
+  --ink-3: #6d756f;
+  --copper: #d9893f;
+  --copper-2: #f0b072;
+  --mask: #1f4d3a;
+  --ok: #7fcf8a;
+  --todo: #e6c25a;
+  --bad: #ef7a62;
+  --display: "Chakra Petch", ui-sans-serif, sans-serif;
+  --sans: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 var(--sans);
+  background-image:
+    radial-gradient(1200px 600px at 85% -10%, rgba(217,137,63,.12), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(31,77,58,.35), transparent 60%);
+  background-attachment: fixed;
+}
+/* fine PCB grid */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 80%);
+}
+a { color: var(--copper-2); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+/* top bar */
+header.bar {
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(10px); background: rgba(13,15,14,.72);
+  border-bottom: 1px solid var(--line);
+}
+header.bar .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
+.logo { font: 700 18px var(--display); letter-spacing: .04em; color: var(--ink); }
+.logo b { color: var(--copper); }
+nav { display: flex; gap: 18px; margin-left: auto; font: 500 13px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+nav a { color: var(--ink-2); }
+nav a:hover { color: var(--ink); text-decoration: none; }
+@media (max-width: 720px) { nav .opt { display: none; } }
+
+/* WIP ribbon */
+.wip {
+  font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: #1a1408; background: repeating-linear-gradient(135deg, var(--todo) 0 14px, #d4ae45 14px 28px);
+  text-align: center; padding: 6px 12px;
+}
+
+/* hero */
+.hero { display: grid; grid-template-columns: 1fr 1.25fr; gap: 32px; align-items: center; padding: 56px 0 24px; }
+@media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 32px; } }
+.tag { font: 500 12px var(--mono); color: var(--copper); letter-spacing: .14em; text-transform: uppercase; }
+h1 {
+  font: 700 clamp(44px, 7vw, 84px)/.95 var(--display); margin: 12px 0 18px; letter-spacing: -.01em;
+}
+h1 span { color: var(--copper); }
+.lede { color: var(--ink-2); font-size: 18px; max-width: 34em; }
+.specs { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0; margin: 28px 0; border-top: 1px solid var(--line); }
+.specs div { padding: 10px 0; border-bottom: 1px solid var(--line); font: 13px var(--mono); color: var(--ink-3); }
+.specs div b { display: block; font: 500 15px var(--sans); color: var(--ink); }
+.specs div:nth-child(odd) { padding-right: 16px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 4px;
+  font: 600 14px var(--sans); border: 1px solid var(--line); color: var(--ink); background: var(--panel);
+}
+.btn:hover { text-decoration: none; border-color: var(--copper); }
+.btn.primary { background: var(--copper); color: #1b1006; border-color: var(--copper); }
+.btn.primary:hover { background: var(--copper-2); }
+
+/* viewer */
+.viewer {
+  position: relative; aspect-ratio: 4 / 3; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #1e2421, #0f1211 70%);
+}
+.viewer canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.viewer .hud {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  font: 12px var(--mono); color: var(--ink-2);
+}
+.viewer .hud label { display: inline-flex; align-items: center; gap: 8px; background: rgba(13,15,14,.75); border: 1px solid var(--line); padding: 6px 10px; border-radius: 4px; }
+.viewer input[type=range] { accent-color: var(--copper); width: 120px; }
+.viewer input[type=checkbox] { accent-color: var(--copper); }
+.viewer .corner { position: absolute; top: 12px; left: 14px; font: 11px var(--mono); color: var(--ink-3); letter-spacing: .1em; text-transform: uppercase; }
+.viewer .loading { position: absolute; inset: 0; display: grid; place-items: center; font: 13px var(--mono); color: var(--ink-3); }
+
+/* sections */
+section { padding: 72px 0 8px; }
+.sh { display: flex; align-items: baseline; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.sh .n { font: 500 13px var(--mono); color: var(--copper); }
+h2 { font: 700 32px/1.1 var(--display); margin: 0; }
+.sh p { margin: 0 0 0 auto; color: var(--ink-3); font: 13px var(--mono); }
+@media (max-width: 720px) { .sh { flex-wrap: wrap; } .sh p { margin: 0; width: 100%; } }
+
+/* status board */
+.status { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.status div { background: var(--bg-2); padding: 14px 16px; }
+.status b { display: block; font-weight: 600; }
+.status small { color: var(--ink-3); font: 12px var(--mono); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.ok .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.todo .dot { background: var(--todo); }
+.bad .dot { background: var(--bad); }
+.issues { margin-top: 20px; padding: 16px 18px; border-left: 3px solid var(--bad); background: rgba(239,122,98,.06); }
+.issues h3 { margin: 0 0 6px; font: 600 15px var(--sans); }
+.issues ul { margin: 0; padding-left: 18px; color: var(--ink-2); }
+
+/* kicanvas */
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tabs button {
+  font: 500 13px var(--mono); padding: 8px 14px; border-radius: 4px; cursor: pointer;
+  background: var(--panel); color: var(--ink-2); border: 1px solid var(--line);
+}
+.tabs button[aria-selected=true] { color: #1b1006; background: var(--copper); border-color: var(--copper); }
+.kc { height: 640px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #000; }
+.kc kicanvas-embed { display: block; width: 100%; height: 100%; }
+@media (max-width: 720px) { .kc { height: 460px; } }
+
+/* steps */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; counter-reset: s; }
+.step { position: relative; padding: 20px 18px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.step::before { counter-increment: s; content: "0" counter(s); font: 700 34px var(--display); color: var(--line); position: absolute; right: 14px; top: 6px; }
+.step h3 { margin: 0 0 6px; font: 600 17px var(--sans); }
+.step p { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; }
+.step a { font: 13px var(--mono); }
+
+/* downloads */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 12px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+td code, p code { font: 13px var(--mono); color: var(--copper-2); }
+.tw { overflow-x: auto; }
+
+/* gallery */
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.gallery figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.gallery img { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; }
+.gallery figcaption { padding: 8px 12px; font: 12px var(--mono); color: var(--ink-3); }
+
+footer { margin-top: 80px; border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--ink-3); font: 13px var(--mono); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; }
+
+/* load-in */
+@keyframes up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.hero > * { animation: up .7s cubic-bezier(.2,.7,.2,1) both; }
+.hero > *:nth-child(2) { animation-delay: .15s; }
+@media (prefers-reduced-motion: reduce) { .hero > * { animation: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wip">Work in progress · Rev 1 prototype · not every block is verified yet</div>
+<header class="bar"><div class="wrap">
+  <span class="logo">F1<b>GAME</b>STATION</span>
+  <nav>
+    <a href="#model" class="opt">Model</a>
+    <a href="#status">Status</a>
+    <a href="#hardware">Board</a>
+    <a href="#build" class="opt">Build</a>
+    <a href="#gallery" class="opt">Gallery</a>
+    <a href="https://github.com/kami4ka/F1GameStation-Handheld">GitHub ↗</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <div class="hero" id="model">
+    <div>
+      <div class="tag">Open hardware handheld · Rev 1</div>
+      <h1>Pocket <span>retro</span>, built from scratch.</h1>
+      <p class="lede">A PSP-style handheld for 8- and 16-bit games around the Allwinner F1C200s. The board is KiCad, the case prints on any FDM printer, and it runs a port of MiyooCFW with its own cover-flow launcher.</p>
+      <div class="specs">
+        <div>SoC<b>Allwinner F1C200s · 64 MB</b></div>
+        <div>Display<b>4.3" 480×272 RGB</b></div>
+        <div>Controls<b>13 buttons + L/R triggers</b></div>
+        <div>Power<b>1S Li-ion · IP5306 · USB-C</b></div>
+        <div>Board<b>176×70 mm · 4 layers</b></div>
+        <div>Case<b>186×80 mm · PETG</b></div>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md">Build guide</a>
+        <a class="btn" href="https://github.com/kami4ka/F1GameStation-Handheld/releases">Downloads</a>
+        <a class="btn" href="ibom.html">Interactive BOM</a>
+      </div>
+    </div>
+    <div class="viewer" id="viewer">
+      <div class="corner">f1gs.glb · drag to orbit</div>
+      <div class="loading" id="loading">loading model…</div>
+      <div class="hud">
+        <label>explode <input type="range" id="explode" min="0" max="1" step="0.01" value="0"></label>
+        <label><input type="checkbox" id="showCase" checked> case</label>
+        <label><input type="checkbox" id="spin" checked> spin</label>
+      </div>
+    </div>
+  </div>
+
+  <section id="status">
+    <div class="sh"><span class="n">01</span><h2>Where it stands</h2><p>two Rev 1 boards built</p></div>
+    <div class="status">
+      <div class="ok"><b><span class="dot"></span>SoC, DRAM, boot</b><small>FEL, U-Boot, SD boot, 64 MB</small></div>
+      <div class="ok"><b><span class="dot"></span>Power rails</b><small>EA3059C bucks, 3V0 LDO</small></div>
+      <div class="ok"><b><span class="dot"></span>Buttons</b><small>13 inputs, see PA1–PA3 note</small></div>
+      <div class="ok"><b><span class="dot"></span>Firmware boots</b><small>MiyooCFW, menu, emulators</small></div>
+      <div class="todo"><b><span class="dot"></span>LCD</b><small>not tested yet</small></div>
+      <div class="todo"><b><span class="dot"></span>Audio</b><small>not tested yet</small></div>
+      <div class="todo"><b><span class="dot"></span>Battery gauge</b><small>not tested yet</small></div>
+      <div class="todo"><b><span class="dot"></span>Backlight</b><small>not tested yet</small></div>
+      <div class="todo"><b><span class="dot"></span>USB high speed</b><small>not tested yet</small></div>
+    </div>
+    <div class="issues">
+      <h3>Known Rev 1 issues</h3>
+      <ul>
+        <li><b>L, R and MENU (PA1–PA3) have no pull-ups.</b> These are touch-panel pins whose internal pull-ups don't work; the firmware reads them with a charge-then-sense trick. Rev 2 should add external pull-ups.</li>
+        <li><b>No pin-1 marks on the silkscreen.</b> Check the orientation of ICs, LEDs and polarised parts against the iBOM before soldering.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="hardware">
+    <div class="sh"><span class="n">02</span><h2>The board, live</h2><p>KiCad sources rendered by KiCanvas</p></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-src="pcb">PCB</button>
+      <button role="tab" aria-selected="false" data-src="sch">Schematic</button>
+    </div>
+    <div class="kc" id="kc"></div>
+  </section>
+
+  <section id="build">
+    <div class="sh"><span class="n">03</span><h2>Make one</h2><p>full guide in docs/BUILD.md</p></div>
+    <div class="steps">
+      <div class="step"><h3>Order the board</h3><p>Upload the Gerber zip, BOM and positions to JLCPCB. 4 layers, JLC04161H-7628.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/hardware/production">hardware/production →</a></div>
+      <div class="step"><h3>Finish assembly</h3><p>Fit the SoC and the hand-placed parts, then the LCD, battery and speaker.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md#2-assemble-the-board">assembly notes →</a></div>
+      <div class="step"><h3>Flash the card</h3><p>Write the prebuilt image to a microSD card, or build kernel, menu and launcher yourself.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/firmware">firmware →</a></div>
+      <div class="step"><h3>Print the case</h3><p>Shells, triggers and caps in PETG; labelled caps print in two colours.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/enclosure">enclosure →</a></div>
+      <div class="step"><h3>Close it up</h3><p>Heat-set inserts, filament trigger pins, four M2 screws.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md#5-final-assembly">final assembly →</a></div>
+    </div>
+  </section>
+
+  <section id="files">
+    <div class="sh"><span class="n">04</span><h2>Files</h2><p>everything needed to reproduce it</p></div>
+    <div class="tw"><table>
+      <tr><th>What</th><th>Where</th><th>Format</th></tr>
+      <tr><td>Schematic and PCB</td><td><code>hardware/kicad/</code></td><td>KiCad 10</td></tr>
+      <tr><td>Fab package</td><td><code>hardware/production/</code></td><td>Gerber zip, BOM (LCSC), positions, schematic PDF, iBOM</td></tr>
+      <tr><td>Board 3D model</td><td><code>hardware/3d/</code></td><td>STEP</td></tr>
+      <tr><td>Print-ready case</td><td><code>enclosure/print/</code></td><td>STL, 3MF, two-colour cap plate</td></tr>
+      <tr><td>Editable case</td><td><code>enclosure/source/</code></td><td>Fusion .f3d, STEP, parametric Python</td></tr>
+      <tr><td>Kernel, menu, launcher</td><td><code>firmware/</code></td><td>patches + Docker build</td></tr>
+      <tr><td>Emulator</td><td><code>firmware/emulator/</code></td><td>QEMU board model</td></tr>
+      <tr><td>SD card image</td><td>Releases</td><td><code>.img.xz</code></td></tr>
+    </table></div>
+  </section>
+
+  <section id="gallery">
+    <div class="sh"><span class="n">05</span><h2>Gallery</h2><p>Rev 1 hardware and the launcher</p></div>
+    <div class="gallery">
+      <figure><img src="images/launcher-shelf.png" alt="Cover-flow launcher shelf" loading="lazy"><figcaption>Cover-flow launcher (emulator capture)</figcaption></figure>
+      <figure><img src="images/launcher-menu.png" alt="Launcher quick menu" loading="lazy"><figcaption>Quick menu: screen modes, volume, brightness</figcaption></figure>
+      <figure><img src="images/enclosure-iso.png" alt="Enclosure render" loading="lazy"><figcaption>Enclosure, Fusion render</figcaption></figure>
+      <figure><img src="images/pcba-battery.png" alt="PCBA with battery" loading="lazy"><figcaption>PCBA with the 606090 cell</figcaption></figure>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <span>Hardware: CERN-OHL-S-2.0</span>
+  <span>Firmware: GPL-2.0</span>
+  <span>Docs: CC BY-SA 4.0</span>
+  <a href="https://github.com/kami4ka/F1GameStation-Handheld">github.com/kami4ka/F1GameStation-Handheld</a>
+</div></footer>
+
+<script type="module" src="https://kicanvas.org/kicanvas/kicanvas.js"></script>
+<script>
+// KiCanvas tabs: one embed at a time keeps memory down on phones
+(function () {
+  const sheets = ['F1GameStation', 'soc', 'power', 'storage', 'display', 'audio', 'buttons'];
+  const kc = document.getElementById('kc');
+  function show(which) {
+    const src = which === 'pcb'
+      ? '<kicanvas-source src="kicad/F1GameStation.kicad_pcb"></kicanvas-source>'
+      : sheets.map(s => `<kicanvas-source src="kicad/${s}.kicad_sch"></kicanvas-source>`).join('');
+    kc.innerHTML = `<kicanvas-embed controls="full" theme="kicad">${src}<kicanvas-source src="kicad/F1GameStation.kicad_pro"></kicanvas-source></kicanvas-embed>`;
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+    show(b.dataset.src);
+  }));
+  show('pcb');
+})();
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const box = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+box.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+renderer.toneMappingExposure = 1.35;
+const key = new THREE.DirectionalLight(0xffe2c4, 2.6); key.position.set(0.2, 0.4, 0.25); scene.add(key);
+const rim = new THREE.DirectionalLight(0x9fd8c0, 0.8); rim.position.set(-0.3, -0.1, -0.3); scene.add(rim);
+
+const camera = new THREE.PerspectiveCamera(30, 4 / 3, 0.005, 5);
+camera.position.set(0.1, 0.19, 0.27);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 0.08; controls.maxDistance = 1.2;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.8;
+
+function resize() {
+  const w = box.clientWidth, h = box.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(box); resize();
+
+const caseNodes = [];
+// three.js turns spaces in node names into underscores
+const raw = await fetch('models/explode.json').then(r => r.json()).catch(() => ({}));
+const offsets = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.replace(/\s/g, '_'), v]));
+new GLTFLoader().load('models/f1gs.glb', gltf => {
+  const root = gltf.scene;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    if (o.name === 'PCBA' || o.parent?.name === 'PCBA') {
+      o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, metalness: .15 });
+    } else {
+      o.material = new THREE.MeshStandardMaterial({ color: m.color ?? 0x2a2c30, roughness: .7, metalness: 0, vertexColors: !!o.geometry.attributes.color });
+      const name = offsets[o.name] !== undefined ? o.name : o.parent?.name;
+      caseNodes.push({ obj: o, base: o.position.y, d: offsets[name] ?? 0 });
+    }
+  });
+  scene.add(root);
+  document.getElementById('loading').remove();
+  setExplode(+document.getElementById('explode').value);
+}, undefined, () => { document.getElementById('loading').textContent = 'model failed to load'; });
+
+function setExplode(t) { for (const n of caseNodes) n.obj.position.y = n.base + n.d * t; }
+document.getElementById('explode').addEventListener('input', e => setExplode(+e.target.value));
+document.getElementById('showCase').addEventListener('change', e => caseNodes.forEach(n => n.obj.visible = e.target.checked));
+document.getElementById('spin').addEventListener('change', e => controls.autoRotate = e.target.checked);
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) { controls.autoRotate = false; document.getElementById('spin').checked = false; }
+
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

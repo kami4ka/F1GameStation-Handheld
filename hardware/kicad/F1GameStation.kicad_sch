@@ -1,0 +1,393 @@
+(kicad_sch
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "e08636a9-83f6-4839-969b-a575da04faa5")
+	(paper "A4")
+	(title_block
+		(title "F1GameStation")
+		(company "F1C200S handheld")
+	)
+	(lib_symbols
+	)
+	(text "F1GameStation: F1C200S handheld, 4.3in RGB LCD, 1S Li-ion"
+		(exclude_from_sim no)
+		(at 20.32 20.32 0)
+		(effects
+			(font
+				(size 3 3)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "db13a6e2-0c6f-4e80-aea2-78b988b05e42")
+	)
+	(sheet
+		(at 25.4 40.64)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "04858d65-bad0-4836-86da-02fad9790ebf")
+		(property "Sheetname" "SoC"
+			(at 25.4 39.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "soc.kicad_sch"
+			(at 25.4 71.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "2")
+				)
+			)
+		)
+	)
+	(text "F1C200S core: clocks, codec reference, DRAM"
+		(exclude_from_sim no)
+		(at 27.94 45.72 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "ac545e59-f137-4cec-ac4c-ec3d153eeea6")
+	)
+	(text "supply, reset, debug UART, status LED"
+		(exclude_from_sim no)
+		(at 27.94 48.26 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "7d6abaf1-c859-4259-8f5f-f01e9f55acd9")
+	)
+	(sheet
+		(at 114.3 40.64)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "edfa7e51-9d53-4a5e-8ee5-4e18cde2a58b")
+		(property "Sheetname" "Power"
+			(at 114.3 39.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power.kicad_sch"
+			(at 114.3 71.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "3")
+				)
+			)
+		)
+	)
+	(text "USB-C input, IP5306 1S Li-ion charger + 5V"
+		(exclude_from_sim no)
+		(at 116.84 45.72 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "6b09abba-28aa-4ff7-bc7d-8fb1df6477c9")
+	)
+	(text "boost, EA3059C triple buck, XC6206 3V0 LDO"
+		(exclude_from_sim no)
+		(at 116.84 48.26 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "0e30b3a6-25a1-4490-a133-fe1e77a4afdd")
+	)
+	(sheet
+		(at 203.2 40.64)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "52bcbc83-7b91-412f-a923-b465d789f8a2")
+		(property "Sheetname" "Storage"
+			(at 203.2 39.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "storage.kicad_sch"
+			(at 203.2 71.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "4")
+				)
+			)
+		)
+	)
+	(text "SPI NOR flash (boot), FEL button, TF card"
+		(exclude_from_sim no)
+		(at 205.74 45.72 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "e202a57b-9d94-4547-9b02-68db5cad369a")
+	)
+	(sheet
+		(at 25.4 91.44)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "f86b047c-c58d-42d2-8b8d-172914789d91")
+		(property "Sheetname" "Display"
+			(at 25.4 90.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "display.kicad_sch"
+			(at 25.4 122.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "5")
+				)
+			)
+		)
+	)
+	(text "4.3in 480x272 RGB565 LCD (40-pin FPC) and MP3202"
+		(exclude_from_sim no)
+		(at 27.94 96.52 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "dd3bc98f-1bf7-46ce-9103-c59e31f74db0")
+	)
+	(text "backlight driver"
+		(exclude_from_sim no)
+		(at 27.94 99.06 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "61209683-2dce-4cb6-affe-4bd2a3e750e5")
+	)
+	(sheet
+		(at 114.3 91.44)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "12382ea5-14d8-4907-b4c8-ba5d85eac89f")
+		(property "Sheetname" "Audio"
+			(at 114.3 90.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "audio.kicad_sch"
+			(at 114.3 122.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "6")
+				)
+			)
+		)
+	)
+	(text "Codec headphone out mixed to mono, NS4150B"
+		(exclude_from_sim no)
+		(at 116.84 96.52 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "e7d7b26f-8ff9-49fb-8ecd-99886b1d7543")
+	)
+	(text "class-D amp, 13 mm SMD speaker"
+		(exclude_from_sim no)
+		(at 116.84 99.06 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "d05efd93-cb41-4289-978d-6a0b61804d6a")
+	)
+	(sheet
+		(at 203.2 91.44)
+		(size 76.2 30.48)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "d45d532e-e35e-4065-a66e-3aaf89a1f6f1")
+		(property "Sheetname" "Buttons"
+			(at 203.2 90.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "buttons.kicad_sch"
+			(at 203.2 122.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "F1GameStation"
+				(path "/e08636a9-83f6-4839-969b-a575da04faa5"
+					(page "7")
+				)
+			)
+		)
+	)
+	(text "Miyoo button set, active low (internal pull-ups)"
+		(exclude_from_sim no)
+		(at 205.74 96.52 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "a6cae259-df7e-4894-8c9c-d4ba46ba5c5c")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

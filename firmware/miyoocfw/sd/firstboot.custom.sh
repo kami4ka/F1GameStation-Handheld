@@ -1,0 +1,1 @@
+sh ./uart-getty.sh

@@ -1,0 +1,13 @@
+#!/bin/sh
+# F1GameStation FEL test init: load the MiyooCFW drivers and run the checks.
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+echo "f1gs: $(uname -r), video driver '$(cat /sys/kernel/miyoo_video/miyoo_video)'"
+modprobe evdev
+modprobe rgb480x272fb && f1gs-test fb
+modprobe miyoo miyoo_snd=4 && modprobe -a snd_mixer_oss snd_pcm_oss && devmem 0x01c23c20 32 0xCC028230 && f1gs-test tone
+ls /sys/class/backlight/*/brightness 2>/dev/null
+echo "f1gs: press buttons; key events print below, shell is on this console too"
+f1gs-test keys &
+exec setsid cttyhack sh

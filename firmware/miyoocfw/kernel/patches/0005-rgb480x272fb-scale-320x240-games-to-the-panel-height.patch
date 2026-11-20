@@ -1,0 +1,238 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Oleg Kulyk <5595029+kami4ka@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 19:45:00 +0000
+Subject: [PATCH] rgb480x272fb: scale 320x240 games to the panel height
+
+The rotate thread can now scale the 320x240 game mode while it copies
+the frame: scale=0 keeps it centred, scale=1 (the default) shows it as
+362x272 (fits the height, 4:3), scale=2 fills 480x272. Nearest
+neighbour, each source line read once and each output line written
+with one burst. Also writable at runtime in the device's sysfs "scale"
+file; rotate_us shows the copy time per frame.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ drivers/video/fbdev/rgb480x272fb.c | 130 ++++++++++++++++++++++++++++++++++---
+ 1 file changed, 122 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/video/fbdev/rgb480x272fb.c b/drivers/video/fbdev/rgb480x272fb.c
+index 98146e87f..fa9b785bb 100644
+--- a/drivers/video/fbdev/rgb480x272fb.c
++++ b/drivers/video/fbdev/rgb480x272fb.c
+@@ -22,6 +22,11 @@
+  * degrees into one of two scanout buffers after every vsync and flips the
+  * DEBE to it.
+  *
++ * The same copy can scale 320x240 games up (scale=, also in sysfs):
++ * 0 = 320x240 centred, 1 = 362x272 (fit the height, 4:3, the default),
++ * 2 = 480x272 (fill the panel). Scaling is nearest-neighbour, so some rows
++ * and columns are shown twice.
++ *
+  * Timings were measured on the board during bring-up:
+  *   PLL_VIDEO 198 MHz, DCLK = 198 / 22 = 9 MHz,
+  *   HT 535, HBP 47, HSPW 4, VT 292, VBP 16, VSPW 4 (~57.6 Hz).
+@@ -70,6 +75,10 @@
+ #define FB_FRAME     (FB_LINE * FB_H)
+ // largest mode: the whole panel (used by the menu UI)
+ #define SCAN_FRAME   (PANEL_W * PANEL_H * 2)
++// 320x240 scaled to the panel height, 4:3 (even, for the centring)
++#define FIT_W        362
++
++enum { SCALE_NONE, SCALE_FIT, SCALE_FILL };
+ 
+ static uint32_t version=1;
+ module_param(version,uint,0660);
+@@ -80,6 +89,9 @@ MODULE_PARM_DESC(rotate, "Rotate the picture by 180 degrees");
+ // "flip" is what the other MiyooCFW panel drivers call it
+ module_param_named(flip, rotate, bool, 0660);
+ MODULE_PARM_DESC(flip, "Same as rotate");
++static int scale=SCALE_FIT;
++module_param(scale,int,0660);
++MODULE_PARM_DESC(scale, "320x240 games: 0 = centred, 1 = fit the height (362x272), 2 = fill 480x272");
+ 
+ struct myfb_par {
+     struct device *dev;
+@@ -108,6 +120,9 @@ struct myfb_par {
+     // current mode: 320x240 (centred, games) or 480x272 (full panel)
+     int w;
+     int h;
++    // size of layer 0 on the panel (w x h, or bigger when scaling)
++    int out_w;
++    int out_h;
+ };
+ 
+ struct suniv_iomm {
+@@ -173,15 +188,46 @@ static void debe_set_frame(struct myfb_par *par)
+     }
+ }
+ 
+-// size and position of layer 0 for the current mode, centred on the panel
+-static void debe_set_layer(struct myfb_par *par)
++// what the picture is shown as: only 320x240 is scaled, and only when the
++// copy thread runs (it does the scaling)
++static void out_size(struct myfb_par *par, int w, int h, int *ow, int *oh)
++{
++    int sc = READ_ONCE(scale);
++
++    *ow = w;
++    *oh = h;
++    if(!par->rotate_task || w != FB_W || h != FB_H){
++        return;
++    }
++    if(sc == SCALE_FIT){
++        *ow = FIT_W;
++        *oh = PANEL_H;
++    }
++    else if(sc == SCALE_FILL){
++        *ow = PANEL_W;
++        *oh = PANEL_H;
++    }
++}
++
++// size and position of layer 0 (ow x oh), centred on the panel
++static void debe_set_layer_size(struct myfb_par *par, int ow, int oh)
+ {
+-    writel(((par->h - 1) << 16) | (par->w - 1), iomm.debe + DEBE_LAY0_SIZE_REG);
+-    writel((((PANEL_H - par->h) / 2) << 16) | ((PANEL_W - par->w) / 2), iomm.debe + DEBE_LAY0_CODNT_REG);
+-    writel(par->w << 4, iomm.debe + DEBE_LAY0_LINEWIDTH_REG);
++    par->out_w = ow;
++    par->out_h = oh;
++    writel(((oh - 1) << 16) | (ow - 1), iomm.debe + DEBE_LAY0_SIZE_REG);
++    writel((((PANEL_H - oh) / 2) << 16) | ((PANEL_W - ow) / 2), iomm.debe + DEBE_LAY0_CODNT_REG);
++    writel(ow << 4, iomm.debe + DEBE_LAY0_LINEWIDTH_REG);
+     suniv_setbits(iomm.debe + DEBE_REGBUFF_CTRL_REG, (1 << 0));
+ }
+ 
++static void debe_set_layer(struct myfb_par *par)
++{
++    int ow, oh;
++
++    out_size(par, par->w, par->h, &ow, &oh);
++    debe_set_layer_size(par, ow, oh);
++}
++
+ // Copy one w x h RGB565 frame rotated by 180 degrees. The source is
+ // uncached, so each line is read with one burst copy into a cached buffer.
+ static void rotate_frame(uint32_t *dst, const uint8_t *src, int fw, int fh)
+@@ -200,26 +246,75 @@ static void rotate_frame(uint32_t *dst, const uint8_t *src, int fw, int fh)
+     }
+ }
+ 
++// Nearest-neighbour scale of a fw x fh RGB565 frame to ow x oh, rotated by
++// 180 degrees if rot. Each source line is read once with a burst copy and
++// each output line is built in a cached buffer and written with one burst.
++static void scale_frame(uint16_t *dst, const uint8_t *src, int fw, int fh, int ow, int oh, bool rot)
++{
++    static uint16_t line[FB_W], out[PANEL_W];
++    static uint16_t xmap[PANEL_W];
++    static int map_w, map_fw;
++    int oy, x, sy, last = -1;
++
++    if(map_w != ow || map_fw != fw){
++        for(x=0; x<ow; x++){
++            xmap[x] = x * fw / ow;
++        }
++        map_w = ow;
++        map_fw = fw;
++    }
++    for(oy=0; oy<oh; oy++){
++        sy = oy * fh / oh;
++        if(sy != last){
++            memcpy(line, src + sy * fw * 2, fw * 2);
++            if(rot){
++                for(x=0; x<ow; x++){
++                    out[ow - 1 - x] = line[xmap[x]];
++                }
++            }
++            else{
++                for(x=0; x<ow; x++){
++                    out[x] = line[xmap[x]];
++                }
++            }
++            last = sy;
++        }
++        memcpy(dst + (rot ? oh - 1 - oy : oy) * ow, out, ow * 2);
++    }
++}
++
+ static int rotate_thread(void *arg)
+ {
+     struct myfb_par *par = arg;
+     uint32_t seen = par->vsync_count;
+     ktime_t t0;
+-    int fw, fh;
++    int fw, fh, ow, oh;
++    void *dst;
+ 
+     while(!kthread_should_stop()){
+         wait_event_interruptible_timeout(wait_vsync_queue, seen != par->vsync_count || kthread_should_stop(), HZ / 10);
+         seen = par->vsync_count;
+         fw = READ_ONCE(par->w);
+         fh = READ_ONCE(par->h);
+-        if(!rotate){
++        out_size(par, fw, fh, &ow, &oh);
++        if(ow != par->out_w || oh != par->out_h){
++            // scale changed: the new layer size is latched with the next frame
++            debe_set_layer_size(par, ow, oh);
++        }
++        if(!rotate && ow == fw && oh == fh){
+             debe_set_addr(par->vram_phys + par->yoffset * fw * 2);
+             par->rotate_us = 0;
+             continue;
+         }
+         t0 = ktime_get();
+         par->scan_idx^= 1;
+-        rotate_frame(par->scan_virt + par->scan_idx * SCAN_FRAME, par->vram_virt + par->yoffset * fw * 2, fw, fh);
++        dst = par->scan_virt + par->scan_idx * SCAN_FRAME;
++        if(ow == fw && oh == fh){
++            rotate_frame(dst, par->vram_virt + par->yoffset * fw * 2, fw, fh);
++        }
++        else{
++            scale_frame(dst, par->vram_virt + par->yoffset * fw * 2, fw, fh, ow, oh, rotate);
++        }
+         debe_set_addr(par->scan_phys + par->scan_idx * SCAN_FRAME);
+         par->rotate_us = ktime_us_delta(ktime_get(), t0);
+     }
+@@ -232,6 +327,23 @@ static ssize_t rotate_us_show(struct device *dev, struct device_attribute *attr,
+ }
+ static DEVICE_ATTR_RO(rotate_us);
+ 
++static ssize_t scale_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++    return sprintf(buf, "%d\n", READ_ONCE(scale));
++}
++
++static ssize_t scale_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
++{
++    int v;
++
++    if(kstrtoint(buf, 10, &v) || v < SCALE_NONE || v > SCALE_FILL){
++        return -EINVAL;
++    }
++    WRITE_ONCE(scale, v);
++    return count;
++}
++static DEVICE_ATTR_RW(scale);
++
+ static irqreturn_t lcdc_irq_handler(int irq, void *arg)
+ {
+     struct myfb_par *par = arg;
+@@ -542,6 +654,7 @@ static int myfb_probe(struct platform_device *device)
+             printk("%s, rotation unavailable, showing the frame unrotated\n", __func__);
+         }
+         device_create_file(&device->dev, &dev_attr_rotate_us);
++        device_create_file(&device->dev, &dev_attr_scale);
+     }
+ 
+     myfb_var.activate = FB_ACTIVATE_FORCE;
+@@ -565,6 +678,7 @@ static int myfb_remove(struct platform_device *dev)
+         if(par->rotate_task){
+             kthread_stop(par->rotate_task);
+             device_remove_file(&dev->dev, &dev_attr_rotate_us);
++            device_remove_file(&dev->dev, &dev_attr_scale);
+         }
+         suniv_clrbits(iomm.lcdc + TCON_INT_REG0, (1 << 31));
+         if(par->lcdc_irq >= 0){
+-- 
+2.39.0
+

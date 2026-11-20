@@ -1,0 +1,37 @@
+From 4765cf654437e7a859e9bb4e867e4267691695c9 Mon Sep 17 00:00:00 2001
+From: Oleg Kulyk <5595029+kami4ka@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 17:15:22 +0200
+Subject: [PATCH 3/3] f1gamestation dts: claim the DEBE clocks for tcon0
+
+With rgb480x272fb built in, clk_disable_unused gated the DEBE bus,
+module and DRAM clocks after probe (they were set up by register
+writes only), leaving the panel black.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts b/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
+index 5f8d9812d..b23cbdb8d 100644
+--- a/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
++++ b/arch/arm/boot/dts/suniv-f1c100s-f1gamestation.dts
+@@ -51,8 +51,14 @@ &battery {
+ 	status = "okay";
+ };
+ 
+-/* driven by the rgb480x272fb module; PD0 and PD12 stay GPIO (buttons) */
++/*
++ * Driven by rgb480x272fb; PD0 and PD12 stay GPIO (buttons). The driver
++ * enables every clock listed here. The DEBE clocks must be among them, or
++ * clk_disable_unused turns the DEBE off when the driver is built in.
++ */
+ &tcon0 {
++	clocks = <&ccu CLK_BUS_LCD>, <&ccu CLK_TCON>,
++		 <&ccu CLK_BUS_DE_BE>, <&ccu CLK_DE_BE>, <&ccu CLK_DRAM_DE_BE>;
+ 	status = "okay";
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+

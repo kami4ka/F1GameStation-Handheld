@@ -1,0 +1,140 @@
+(footprint "SKRRAAE010"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "SKRRAAE010, pads converted from LCSC/EasyEDA footprint KEY-SMD_4P-L7.5-W7.0-P6.00-LS5.0")
+	(property "Reference" "REF**"
+		(at 0 -4.54 0)
+		(layer "F.SilkS")
+		(uuid "a4ac26e4-df4f-435b-88e8-59da333384f2")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SKRRAAE010"
+		(at 0 4.54 0)
+		(layer "F.Fab")
+		(uuid "af3d73af-48da-424a-a79b-13cbdaa18758")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "44c5acf9-92c8-4f54-b50c-27ccb3372568")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "b44ba492-daa6-46c9-acf7-8175c152e4aa")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_circle
+		(center -3 -3.69)
+		(end -2.85 -3.69)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.SilkS")
+		(uuid "61218f96-dbae-4c7b-a6c8-442ed66c28d1")
+	)
+	(fp_line
+		(start -3.75 -3.34)
+		(end 3.75 -3.34)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "07565d6e-f6a6-4b36-aa87-7f3cdf9170ce")
+	)
+	(fp_line
+		(start -3.75 3.34)
+		(end -3.75 -3.34)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "57cd69ab-1d87-4a22-a621-79bd9e992fad")
+	)
+	(fp_line
+		(start 3.75 -3.34)
+		(end 3.75 3.34)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "dbbc6815-5192-4660-8239-3b17743eec00")
+	)
+	(fp_line
+		(start 3.75 3.34)
+		(end -3.75 3.34)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "d18e5c36-c960-491f-a4cb-988f42f33009")
+	)
+	(pad "1" smd rect
+		(at -3 -2.54)
+		(size 1 1.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "d5ac9420-8033-471a-8acf-f1dcb4982644")
+	)
+	(pad "2" smd rect
+		(at -3 2.54)
+		(size 1 1.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "d74585c8-7cd6-4635-be3b-83f544e2984e")
+	)
+	(pad "3" smd rect
+		(at 3 -2.54)
+		(size 1 1.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "2ba54763-d4ca-49d1-a9dd-a9834d2ec697")
+	)
+	(pad "4" smd rect
+		(at 3 2.54)
+		(size 1 1.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "1d263ed5-8bba-4934-9a88-686161bf4827")
+	)
+	(embedded_fonts no)
+	(model "${KIPRJMOD}/libraries/F1GameStation.3dshapes/SKRRAAE010.step"
+		(offset
+			(xyz -0.0005 -0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

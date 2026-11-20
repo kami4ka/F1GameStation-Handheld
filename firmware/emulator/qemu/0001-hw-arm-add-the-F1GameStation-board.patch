@@ -1,0 +1,1556 @@
+From d09ded9bf482e098c9a73fa8e685cbcf2b9b33d5 Mon Sep 17 00:00:00 2001
+From: f1gs <f1gs@localhost>
+Date: Fri, 13 Nov 2026 22:02:43 +0000
+Subject: [PATCH 1/2] hw/arm: add the F1GameStation handheld (Allwinner
+ F1C200s) board
+
+---
+ hw/arm/Kconfig         |   11 +
+ hw/arm/f1gamestation.c | 1463 ++++++++++++++++++++++++++++++++++++++++
+ hw/arm/meson.build     |    1 +
+ hw/sd/Kconfig          |    4 +
+ hw/sd/meson.build      |    2 +-
+ 5 files changed, 1480 insertions(+), 1 deletion(-)
+ create mode 100644 hw/arm/f1gamestation.c
+
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index 1b25e73..0d9a699 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -319,6 +319,7 @@ config ARM_V7M
+ 
+ config ALLWINNER_A10
+     bool
++    select ALLWINNER_SDHOST
+     select AHCI
+     select ALLWINNER_A10_PIT
+     select ALLWINNER_A10_PIC
+@@ -335,6 +336,7 @@ config ALLWINNER_A10
+ 
+ config ALLWINNER_H3
+     bool
++    select ALLWINNER_SDHOST
+     default y
+     depends on TCG && ARM
+     select ALLWINNER_A10_PIT
+@@ -641,3 +643,12 @@ config ARMSSE
+     select UNIMP
+     select SSE_COUNTER
+     select SSE_TIMER
++
++config F1GAMESTATION
++    bool
++    default y
++    depends on TCG && ARM
++    select ALLWINNER_A10_PIT
++    select ALLWINNER_SDHOST
++    select SERIAL_MM
++    select UNIMP
+diff --git a/hw/arm/f1gamestation.c b/hw/arm/f1gamestation.c
+new file mode 100644
+index 0000000..97a717d
+--- /dev/null
++++ b/hw/arm/f1gamestation.c
+@@ -0,0 +1,1463 @@
++/*
++ * F1GameStation handheld (Allwinner F1C200s / "suniv") board emulation.
++ *
++ * Enough of the SoC for the MiyooCFW kernel with the F1GameStation patches
++ * and the MiyooCFW root filesystem from the SD card:
++ *   - ARM926EJ-S, 64 MiB DRAM at 0x80000000, SRAM
++ *   - suniv interrupt controller, sun4i timer, sun6i watchdog (reset)
++ *   - CCU (PLLs report lock), PIO with the 13 buttons on the host keyboard
++ *   - UART0 (debug console), SD/MMC0, and MMC1 as an optional second
++ *     card (-drive if=sd,index=1) for sharing files with the host
++ *   - DEBE layer 0 + TCON0 shown as the 480x272 panel, with vblank IRQ,
++ *     the 180 degree panel mounting and PWM1 backlight brightness
++ *   - normal DMA channel 0 feeding the audio codec, played on the host
++ *   - LRADC battery reading
++ * Everything else is an unimplemented-device stub (reads 0, logs writes
++ * with -d unimp); the SPI flash, USB OTG and video engine nodes are
++ * disabled in the DTB at load time.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "qapi/visitor.h"
++#include "qemu/error-report.h"
++#include "qemu/log.h"
++#include "qemu/module.h"
++#include "qemu/timer.h"
++#include "qemu/units.h"
++#include "hw/boards.h"
++#include "hw/arm/boot.h"
++#include "hw/sysbus.h"
++#include "hw/irq.h"
++#include "hw/qdev-properties.h"
++#include "hw/char/serial-mm.h"
++#include "hw/misc/unimp.h"
++#include "hw/sd/sd.h"
++#include "hw/sd/allwinner-sdhost.h"
++#include "hw/timer/allwinner-a10-pit.h"
++#include "sysemu/sysemu.h"
++#include "sysemu/runstate.h"
++#include "sysemu/blockdev.h"
++#include "sysemu/block-backend.h"
++#include "sysemu/device_tree.h"
++#include "sysemu/dma.h"
++#include "exec/address-spaces.h"
++#include "ui/console.h"
++#include "ui/input.h"
++#include "audio/audio.h"
++#include "target/arm/cpu-qom.h"
++#include "target/arm/cpu.h"
++#include <libfdt.h>
++
++#define F1GS_SDRAM_BASE   0x80000000
++#define F1GS_DMA_BASE     0x01c02000
++#define F1GS_SPI0_BASE    0x01c05000
++#define F1GS_SPI1_BASE    0x01c06000
++#define F1GS_TVE_BASE     0x01c0a000
++#define F1GS_TCON_BASE    0x01c0c000
++#define F1GS_VE_BASE      0x01c0e000
++#define F1GS_MMC0_BASE    0x01c0f000
++#define F1GS_MMC1_BASE    0x01c10000
++#define F1GS_USB_BASE     0x01c13000
++#define F1GS_CCU_BASE     0x01c20000
++#define F1GS_INTC_BASE    0x01c20400
++#define F1GS_PIO_BASE     0x01c20800
++#define F1GS_TIMER_BASE   0x01c20c00
++#define F1GS_WDT_BASE     0x01c20ca0
++#define F1GS_PWM_BASE     0x01c21000
++#define F1GS_DA_BASE      0x01c22000
++#define F1GS_LRADC_BASE   0x01c23400
++#define F1GS_CODEC_BASE   0x01c23c00
++#define F1GS_UART0_BASE   0x01c25000
++#define F1GS_DEFE_BASE    0x01e00000
++#define F1GS_DEBE_BASE    0x01e60000
++
++#define F1GS_IRQ_UART0    1
++#define F1GS_IRQ_TIMER0   13
++#define F1GS_IRQ_DMA      18
++#define F1GS_IRQ_MMC0     23
++#define F1GS_IRQ_TCON     29
++
++#define PANEL_W 480
++#define PANEL_H 272
++
++/* ------------------------------------------------------------------ */
++/* Interrupt controller ("allwinner,suniv-f1c100s-ic")                 */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_SUNIV_INTC "suniv-intc"
++OBJECT_DECLARE_SIMPLE_TYPE(SunivIntcState, SUNIV_INTC)
++
++#define SUNIV_INTC_NR 64
++
++struct SunivIntcState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    qemu_irq parent_irq;
++    qemu_irq parent_fiq;
++    uint32_t level[2];
++    uint32_t enable[2];
++    uint32_t mask[2];
++    uint32_t base_addr;
++    uint32_t protect;
++    uint32_t nmi;
++    uint32_t vector;
++};
++
++static void suniv_intc_update(SunivIntcState *s)
++{
++    int i, irq = 0;
++
++    s->vector = 0;
++    for (i = 0; i < 2; i++) {
++        uint32_t act = s->level[i] & s->enable[i] & ~s->mask[i];
++        if (act) {
++            if (!irq) {
++                s->vector = (i * 32 + ctz32(act)) * 4;
++            }
++            irq = 1;
++        }
++    }
++    qemu_set_irq(s->parent_irq, irq);
++}
++
++static void suniv_intc_set_irq(void *opaque, int n, int level)
++{
++    SunivIntcState *s = opaque;
++
++    s->level[n / 32] = deposit32(s->level[n / 32], n % 32, 1, !!level);
++    suniv_intc_update(s);
++}
++
++static uint64_t suniv_intc_read(void *opaque, hwaddr off, unsigned size)
++{
++    SunivIntcState *s = opaque;
++    int i = (off >> 2) & 1;
++
++    switch (off) {
++    case 0x00:
++        return s->base_addr + s->vector;
++    case 0x04:
++        return s->base_addr;
++    case 0x08:
++        return s->protect;
++    case 0x0c:
++        return s->nmi;
++    case 0x10: case 0x14:
++        return s->level[i];
++    case 0x20: case 0x24:
++        return s->enable[i];
++    case 0x30: case 0x34:
++        return s->mask[i];
++    default:
++        return 0;
++    }
++}
++
++static void suniv_intc_write(void *opaque, hwaddr off, uint64_t val,
++                             unsigned size)
++{
++    SunivIntcState *s = opaque;
++    int i = (off >> 2) & 1;
++
++    switch (off) {
++    case 0x04:
++        s->base_addr = val & ~3;
++        break;
++    case 0x08:
++        s->protect = val;
++        break;
++    case 0x0c:
++        s->nmi = val;
++        break;
++    case 0x20: case 0x24:
++        s->enable[i] = val;
++        break;
++    case 0x30: case 0x34:
++        s->mask[i] = val;
++        break;
++    default:
++        /* pending bits follow the (level) sources; writes are acks */
++        break;
++    }
++    suniv_intc_update(s);
++}
++
++static const MemoryRegionOps suniv_intc_ops = {
++    .read = suniv_intc_read,
++    .write = suniv_intc_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void suniv_intc_init(Object *obj)
++{
++    SunivIntcState *s = SUNIV_INTC(obj);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
++
++    qdev_init_gpio_in(DEVICE(obj), suniv_intc_set_irq, SUNIV_INTC_NR);
++    sysbus_init_irq(sbd, &s->parent_irq);
++    sysbus_init_irq(sbd, &s->parent_fiq);
++    memory_region_init_io(&s->iomem, obj, &suniv_intc_ops, s,
++                          TYPE_SUNIV_INTC, 0x400);
++    sysbus_init_mmio(sbd, &s->iomem);
++}
++
++static void suniv_intc_reset(DeviceState *dev)
++{
++    SunivIntcState *s = SUNIV_INTC(dev);
++
++    s->enable[0] = s->enable[1] = 0;
++    s->mask[0] = s->mask[1] = 0;
++    s->base_addr = s->protect = s->nmi = 0;
++    suniv_intc_update(s);
++}
++
++static void suniv_intc_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    device_class_set_legacy_reset(dc, suniv_intc_reset);
++}
++
++/* ------------------------------------------------------------------ */
++/* CCU: plain registers; PLL lock (bit 28) always reads as set         */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_SUNIV_CCU "suniv-ccu"
++OBJECT_DECLARE_SIMPLE_TYPE(SunivCcuState, SUNIV_CCU)
++
++struct SunivCcuState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    uint32_t regs[0x400 / 4];
++};
++
++static uint64_t suniv_ccu_read(void *opaque, hwaddr off, unsigned size)
++{
++    SunivCcuState *s = opaque;
++    uint32_t v = s->regs[off / 4];
++
++    if (off <= 0x2c) {
++        v |= 1u << 28;          /* PLL_x_CTRL: LOCK */
++    }
++    return v;
++}
++
++static void suniv_ccu_write(void *opaque, hwaddr off, uint64_t val,
++                            unsigned size)
++{
++    SunivCcuState *s = opaque;
++
++    s->regs[off / 4] = val;
++}
++
++static const MemoryRegionOps suniv_ccu_ops = {
++    .read = suniv_ccu_read,
++    .write = suniv_ccu_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void suniv_ccu_reset(DeviceState *dev)
++{
++    SunivCcuState *s = SUNIV_CCU(dev);
++
++    memset(s->regs, 0, sizeof(s->regs));
++    /* state after the board's U-Boot, which this machine skips */
++    s->regs[0x000 / 4] = 0x80001410;    /* PLL_CPU 408 MHz */
++    s->regs[0x008 / 4] = 0x00035514;    /* PLL_AUDIO */
++    s->regs[0x010 / 4] = 0x03006207;    /* PLL_VIDEO */
++    s->regs[0x018 / 4] = 0x03006207;    /* PLL_VE */
++    s->regs[0x020 / 4] = 0x80101800;    /* PLL_DDR */
++    s->regs[0x028 / 4] = 0x80041800;    /* PLL_PERIPH 600 MHz */
++    s->regs[0x050 / 4] = 0x00020000;    /* CPU_CLK_SRC = PLL_CPU */
++    s->regs[0x054 / 4] = 0x00003180;    /* AHB/APB/HCLKC */
++    s->regs[0x060 / 4] = 0x00004000;    /* BUS_CLK_GATING0 (MMC0) */
++    s->regs[0x068 / 4] = 0x00100000;    /* BUS_CLK_GATING2 (UART0) */
++    s->regs[0x2c0 / 4] = 0x00004000;    /* BUS_SOFT_RST0 */
++    s->regs[0x2d0 / 4] = 0x00100000;    /* BUS_SOFT_RST2 */
++}
++
++static void suniv_ccu_init(Object *obj)
++{
++    SunivCcuState *s = SUNIV_CCU(obj);
++
++    memory_region_init_io(&s->iomem, obj, &suniv_ccu_ops, s,
++                          TYPE_SUNIV_CCU, 0x400);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
++}
++
++static void suniv_ccu_class_init(ObjectClass *klass, void *data)
++{
++    device_class_set_legacy_reset(DEVICE_CLASS(klass), suniv_ccu_reset);
++}
++
++/* ------------------------------------------------------------------ */
++/* Watchdog ("allwinner,sun6i-a31-wdt"): used by Linux for reboot      */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_SUNIV_WDT "suniv-wdt"
++OBJECT_DECLARE_SIMPLE_TYPE(SunivWdtState, SUNIV_WDT)
++
++struct SunivWdtState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    QEMUTimer *timer;
++    uint32_t irq_en, irq_sta, ctrl, cfg, mode;
++};
++
++static const uint16_t suniv_wdt_ms[16] = {
++    500, 1000, 2000, 3000, 4000, 5000, 6000, 8000,
++    10000, 12000, 14000, 16000, 16000, 16000, 16000, 16000,
++};
++
++static void suniv_wdt_kick(SunivWdtState *s)
++{
++    if (s->mode & 1) {
++        timer_mod(s->timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) +
++                  suniv_wdt_ms[(s->mode >> 4) & 0xf]);
++    } else {
++        timer_del(s->timer);
++    }
++}
++
++static void suniv_wdt_expired(void *opaque)
++{
++    SunivWdtState *s = opaque;
++
++    if ((s->cfg & 3) == 1) {
++        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
++    }
++}
++
++static uint64_t suniv_wdt_read(void *opaque, hwaddr off, unsigned size)
++{
++    SunivWdtState *s = opaque;
++
++    switch (off) {
++    case 0x00: return s->irq_en;
++    case 0x04: return s->irq_sta;
++    case 0x10: return s->ctrl;
++    case 0x14: return s->cfg;
++    case 0x18: return s->mode;
++    default:   return 0;
++    }
++}
++
++static void suniv_wdt_write(void *opaque, hwaddr off, uint64_t val,
++                            unsigned size)
++{
++    SunivWdtState *s = opaque;
++
++    switch (off) {
++    case 0x00:
++        s->irq_en = val;
++        break;
++    case 0x04:
++        s->irq_sta &= ~val;
++        break;
++    case 0x10:
++        if ((val & 1) && ((val >> 1) & 0xfff) == 0xa57) {
++            suniv_wdt_kick(s);
++        }
++        break;
++    case 0x14:
++        s->cfg = val;
++        break;
++    case 0x18:
++        /* Linux's restart path keeps rewriting MODE: only an enable or a
++         * new interval (re)starts the countdown, like the hardware */
++        if ((val ^ s->mode) & 0xf1) {
++            s->mode = val;
++            suniv_wdt_kick(s);
++        }
++        s->mode = val;
++        break;
++    }
++}
++
++static const MemoryRegionOps suniv_wdt_ops = {
++    .read = suniv_wdt_read,
++    .write = suniv_wdt_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void suniv_wdt_init(Object *obj)
++{
++    SunivWdtState *s = SUNIV_WDT(obj);
++
++    memory_region_init_io(&s->iomem, obj, &suniv_wdt_ops, s,
++                          TYPE_SUNIV_WDT, 0x20);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
++    s->timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, suniv_wdt_expired, s);
++}
++
++static void suniv_wdt_reset(DeviceState *dev)
++{
++    SunivWdtState *s = SUNIV_WDT(dev);
++
++    s->irq_en = s->irq_sta = s->ctrl = s->mode = 0;
++    s->cfg = 1;
++    timer_del(s->timer);
++}
++
++static void suniv_wdt_class_init(ObjectClass *klass, void *data)
++{
++    device_class_set_legacy_reset(DEVICE_CLASS(klass), suniv_wdt_reset);
++}
++
++
++/* ------------------------------------------------------------------ */
++/* PIO, with the 13 buttons on the host keyboard                       */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_SUNIV_PIO "suniv-pio"
++OBJECT_DECLARE_SIMPLE_TYPE(SunivPioState, SUNIV_PIO)
++
++enum { PORT_A, PORT_B, PORT_C, PORT_D, PORT_E, PORT_F, PIO_PORTS };
++
++typedef struct F1gsButton {
++    const char *name;
++    int port;
++    int pin;
++    int qcode[3];   /* host keys, 0-terminated */
++} F1gsButton;
++
++/* Pins from the F1GameStation schematic; every button switches to GND. */
++static const F1gsButton f1gs_buttons[] = {
++    { "UP",     PORT_E, 10, { Q_KEY_CODE_UP } },
++    { "DOWN",   PORT_E, 11, { Q_KEY_CODE_DOWN } },
++    { "LEFT",   PORT_E,  4, { Q_KEY_CODE_LEFT } },
++    { "RIGHT",  PORT_E,  5, { Q_KEY_CODE_RIGHT } },
++    { "A",      PORT_E,  7, { Q_KEY_CODE_X } },
++    { "B",      PORT_E,  8, { Q_KEY_CODE_Z } },
++    { "X",      PORT_E,  9, { Q_KEY_CODE_S } },
++    { "Y",      PORT_D, 12, { Q_KEY_CODE_A } },
++    { "START",  PORT_E, 12, { Q_KEY_CODE_RET } },
++    { "SELECT", PORT_D,  0, { Q_KEY_CODE_SHIFT_R, Q_KEY_CODE_BACKSPACE } },
++    { "MENU",   PORT_A,  1, { Q_KEY_CODE_ESC, Q_KEY_CODE_M } },
++    { "L",      PORT_A,  2, { Q_KEY_CODE_Q } },
++    { "R",      PORT_A,  3, { Q_KEY_CODE_W } },
++};
++
++struct SunivPioState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    QemuInputHandlerState *input;
++    uint32_t regs[0x400 / 4];
++    uint32_t buttons[PIO_PORTS];   /* pins that have a button */
++    uint32_t pressed[PIO_PORTS];   /* buttons held now */
++};
++
++static uint64_t suniv_pio_read(void *opaque, hwaddr off, unsigned size)
++{
++    SunivPioState *s = opaque;
++    unsigned port = off / 0x24;
++
++    if (port < PIO_PORTS && off % 0x24 == 0x10) {
++        /*
++         * Button pins have pull-ups to 3.3 V: they read 1 unless the
++         * button is held, whatever the pin mode (this also satisfies the
++         * charge-then-sense reads used on PA1-PA3).
++         */
++        return (s->regs[off / 4] | s->buttons[port]) & ~s->pressed[port];
++    }
++    return s->regs[off / 4];
++}
++
++static void suniv_pio_write(void *opaque, hwaddr off, uint64_t val,
++                            unsigned size)
++{
++    SunivPioState *s = opaque;
++
++    s->regs[off / 4] = val;
++}
++
++static const MemoryRegionOps suniv_pio_ops = {
++    .read = suniv_pio_read,
++    .write = suniv_pio_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void suniv_pio_key(DeviceState *dev, QemuConsole *src, InputEvent *evt)
++{
++    SunivPioState *s = SUNIV_PIO(dev);
++    InputKeyEvent *key = evt->u.key.data;
++    int qcode = qemu_input_key_value_to_qcode(key->key);
++
++    for (size_t i = 0; i < ARRAY_SIZE(f1gs_buttons); i++) {
++        const F1gsButton *b = &f1gs_buttons[i];
++        for (int k = 0; k < 3 && b->qcode[k]; k++) {
++            if (b->qcode[k] == qcode) {
++                s->pressed[b->port] = deposit32(s->pressed[b->port],
++                                                b->pin, 1, key->down);
++            }
++        }
++    }
++}
++
++static const QemuInputHandler suniv_pio_input = {
++    .name  = "F1GameStation buttons",
++    .mask  = INPUT_EVENT_MASK_KEY,
++    .event = suniv_pio_key,
++};
++
++static void suniv_pio_realize(DeviceState *dev, Error **errp)
++{
++    SunivPioState *s = SUNIV_PIO(dev);
++
++    for (size_t i = 0; i < ARRAY_SIZE(f1gs_buttons); i++) {
++        s->buttons[f1gs_buttons[i].port] |= 1u << f1gs_buttons[i].pin;
++    }
++    s->input = qemu_input_handler_register(dev, &suniv_pio_input);
++    qemu_input_handler_activate(s->input);
++}
++
++static void suniv_pio_init(Object *obj)
++{
++    SunivPioState *s = SUNIV_PIO(obj);
++
++    memory_region_init_io(&s->iomem, obj, &suniv_pio_ops, s,
++                          TYPE_SUNIV_PIO, 0x400);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
++}
++
++static void suniv_pio_reset(DeviceState *dev)
++{
++    SunivPioState *s = SUNIV_PIO(dev);
++
++    memset(s->regs, 0, sizeof(s->regs));
++    /* U-Boot leaves UART0 on PE0/PE1 (function 5) */
++    s->regs[(PORT_E * 0x24) / 4] = 0x77777755;
++}
++
++static void suniv_pio_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = suniv_pio_realize;
++    device_class_set_legacy_reset(dc, suniv_pio_reset);
++}
++
++/* ------------------------------------------------------------------ */
++/* LRADC (KEYADC): the battery voltage through the 200k/100k divider   */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_SUNIV_LRADC "suniv-lradc"
++OBJECT_DECLARE_SIMPLE_TYPE(SunivLradcState, SUNIV_LRADC)
++
++struct SunivLradcState {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    uint32_t regs[0x400 / 4];
++    uint32_t battery_mv;
++};
++
++static uint64_t suniv_lradc_read(void *opaque, hwaddr off, unsigned size)
++{
++    SunivLradcState *s = opaque;
++
++    if (off == 0x0c) {
++        /* 6-bit sample; MiyooCFW's miyoo-battery reports sample * 90 mV */
++        return MIN(s->battery_mv / 90, 63);
++    }
++    return s->regs[off / 4];
++}
++
++static void suniv_lradc_write(void *opaque, hwaddr off, uint64_t val,
++                              unsigned size)
++{
++    SunivLradcState *s = opaque;
++
++    s->regs[off / 4] = val;
++}
++
++static const MemoryRegionOps suniv_lradc_ops = {
++    .read = suniv_lradc_read,
++    .write = suniv_lradc_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4,
++    .valid.max_access_size = 4,
++};
++
++static void suniv_lradc_init(Object *obj)
++{
++    SunivLradcState *s = SUNIV_LRADC(obj);
++
++    memory_region_init_io(&s->iomem, obj, &suniv_lradc_ops, s,
++                          TYPE_SUNIV_LRADC, 0x400);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
++}
++
++static Property suniv_lradc_props[] = {
++    DEFINE_PROP_UINT32("battery-mv", SunivLradcState, battery_mv, 3900),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static void suniv_lradc_class_init(ObjectClass *klass, void *data)
++{
++    device_class_set_props(DEVICE_CLASS(klass), suniv_lradc_props);
++}
++
++/* ------------------------------------------------------------------ */
++/* Display: DEBE layer 0 -> TCON0 -> 480x272 panel, PWM1 backlight     */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_F1GS_LCD "f1gs-lcd"
++OBJECT_DECLARE_SIMPLE_TYPE(F1gsLcdState, F1GS_LCD)
++
++struct F1gsLcdState {
++    SysBusDevice parent_obj;
++    MemoryRegion debe_mem;
++    MemoryRegion tcon_mem;
++    MemoryRegion pwm_mem;
++    QemuConsole *con;
++    QEMUTimer *vblank;
++    qemu_irq irq;
++    uint32_t debe[0x1000 / 4];
++    uint32_t tcon[0x1000 / 4];
++    uint32_t pwm[0x10 / 4];
++    uint32_t scale;
++    bool rotate;
++    uint8_t line[PANEL_W * 2 * 4];
++    uint32_t frame[PANEL_W * PANEL_H];
++};
++
++#define VBLANK_NS (NANOSECONDS_PER_SECOND / 58)
++
++static bool f1gs_lcd_enabled(F1gsLcdState *s)
++{
++    return (s->tcon[0x000 / 4] & (1u << 31)) &&
++           (s->tcon[0x040 / 4] & (1u << 31));
++}
++
++static void f1gs_lcd_irq_update(F1gsLcdState *s)
++{
++    uint32_t r = s->tcon[0x004 / 4];
++
++    qemu_set_irq(s->irq, (r & (1u << 31)) && (r & (1u << 15)));
++}
++
++static void f1gs_lcd_vblank(void *opaque)
++{
++    F1gsLcdState *s = opaque;
++
++    if (f1gs_lcd_enabled(s)) {
++        s->tcon[0x004 / 4] |= 1u << 15;
++        f1gs_lcd_irq_update(s);
++    }
++    timer_mod(s->vblank, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + VBLANK_NS);
++}
++
++/* backlight level 0..256 from PWM channel 1 (PE6 drives the boost EN) */
++static int f1gs_lcd_backlight(F1gsLcdState *s)
++{
++    uint32_t ctrl = s->pwm[0] >> 15;
++    uint32_t period = s->pwm[2];
++    uint32_t prd = (period >> 16) + 1, dty = period & 0xffff;
++    int level;
++
++    if (!(ctrl & (1 << 4))) {
++        /* channel never set up: the pull-up keeps the backlight on */
++        return (ctrl & 0x7fff) ? 0 : 256;
++    }
++    level = MIN(dty, prd) * 256 / prd;
++    return (ctrl & (1 << 5)) ? level : 256 - level;
++}
++
++static inline uint32_t f1gs_pixel(const uint8_t *p, int fmt)
++{
++    uint32_t v, r, g, b;
++
++    switch (fmt) {
++    case 0x9:   /* ARGB8888 */
++        return ldl_le_p(p) & 0xffffff;
++    case 0xa:   /* RGB888 */
++        return p[0] | (p[1] << 8) | (p[2] << 16);
++    case 0x7:   /* ARGB1555 */
++        v = lduw_le_p(p);
++        r = (v >> 10) & 0x1f; g = (v >> 5) & 0x1f; b = v & 0x1f;
++        return (r << 19 | (r >> 2) << 16) | (g << 11 | (g >> 2) << 8) |
++               (b << 3 | b >> 2);
++    default:    /* RGB565 */
++        v = lduw_le_p(p);
++        r = (v >> 11) & 0x1f; g = (v >> 5) & 0x3f; b = v & 0x1f;
++        return (r << 19 | (r >> 2) << 16) | (g << 10 | (g >> 4) << 8) |
++               (b << 3 | b >> 2);
++    }
++}
++
++static int f1gs_bpp(int fmt)
++{
++    switch (fmt) {
++    case 0x9: return 4;
++    case 0xa: return 3;
++    default:  return 2;
++    }
++}
++
++static void f1gs_lcd_compose(F1gsLcdState *s)
++{
++    uint32_t mode = s->debe[0x800 / 4];
++    uint32_t size = s->debe[0x810 / 4];
++    uint32_t pos = s->debe[0x820 / 4];
++    uint32_t stride = s->debe[0x840 / 4] / 8;
++    uint64_t addr = (s->debe[0x850 / 4] >> 3) |
++                    ((uint64_t)(s->debe[0x860 / 4] & 0xff) << 29);
++    int fmt = (s->debe[0x8a0 / 4] >> 8) & 0xf;
++    int lw = (size & 0x1fff) + 1, lh = ((size >> 16) & 0x1fff) + 1;
++    int lx = (int16_t)(pos & 0xffff), ly = (int16_t)(pos >> 16);
++    int bpp = f1gs_bpp(fmt);
++    int bl = f1gs_lcd_backlight(s);
++
++    memset(s->frame, 0, sizeof(s->frame));
++    if (!f1gs_lcd_enabled(s) || !(mode & 1) || !(mode & (1 << 8)) || !bl) {
++        return;
++    }
++    for (int y = 0; y < lh; y++) {
++        int py = ly + y, x0 = MAX(0, -lx), x1 = MIN(lw, PANEL_W - lx);
++        if (py < 0 || py >= PANEL_H || x1 <= x0) {
++            continue;
++        }
++        if (dma_memory_read(&address_space_memory,
++                            addr + (uint64_t)y * stride + x0 * bpp,
++                            s->line, (x1 - x0) * bpp,
++                            MEMTXATTRS_UNSPECIFIED) != MEMTX_OK) {
++            continue;
++        }
++        for (int x = x0; x < x1; x++) {
++            uint32_t c = f1gs_pixel(s->line + (x - x0) * bpp, fmt);
++            if (bl < 256) {
++                c = (((c >> 16 & 0xff) * bl >> 8) << 16) |
++                    (((c >> 8 & 0xff) * bl >> 8) << 8) |
++                    ((c & 0xff) * bl >> 8);
++            }
++            s->frame[py * PANEL_W + lx + x] = c;
++        }
++    }
++}
++
++static void f1gs_lcd_update(void *opaque)
++{
++    F1gsLcdState *s = opaque;
++    DisplaySurface *surf = qemu_console_surface(s->con);
++    int sc = s->scale, w = PANEL_W * sc;
++    uint32_t *dst;
++
++    if (surface_width(surf) != w || surface_height(surf) != PANEL_H * sc) {
++        qemu_console_resize(s->con, w, PANEL_H * sc);
++        surf = qemu_console_surface(s->con);
++    }
++    f1gs_lcd_compose(s);
++    dst = (uint32_t *)surface_data(surf);
++    for (int y = 0; y < PANEL_H; y++) {
++        /*
++         * The panel is mounted upside down: the kernel draws each frame
++         * rotated by 180 degrees, so undo that here to show the picture
++         * the way it looks on the handheld.
++         */
++        const uint32_t *src = s->frame +
++            (s->rotate ? (PANEL_H - 1 - y) : y) * PANEL_W;
++        uint32_t *row = dst + y * sc * (surface_stride(surf) / 4);
++        for (int x = 0; x < PANEL_W; x++) {
++            uint32_t c = src[s->rotate ? PANEL_W - 1 - x : x];
++            for (int i = 0; i < sc; i++) {
++                row[x * sc + i] = c;
++            }
++        }
++        for (int i = 1; i < sc; i++) {
++            memcpy(row + i * (surface_stride(surf) / 4), row, w * 4);
++        }
++    }
++    dpy_gfx_update_full(s->con);
++}
++
++static const GraphicHwOps f1gs_lcd_gfx_ops = {
++    .gfx_update = f1gs_lcd_update,
++};
++
++static uint64_t f1gs_debe_read(void *opaque, hwaddr off, unsigned size)
++{
++    return ((F1gsLcdState *)opaque)->debe[(off & 0xfff) / 4];
++}
++
++static void f1gs_debe_write(void *opaque, hwaddr off, uint64_t val,
++                            unsigned size)
++{
++    ((F1gsLcdState *)opaque)->debe[(off & 0xfff) / 4] = val;
++}
++
++static uint64_t f1gs_tcon_read(void *opaque, hwaddr off, unsigned size)
++{
++    return ((F1gsLcdState *)opaque)->tcon[off / 4];
++}
++
++static void f1gs_tcon_write(void *opaque, hwaddr off, uint64_t val,
++                            unsigned size)
++{
++    F1gsLcdState *s = opaque;
++
++    s->tcon[off / 4] = val;
++    if (off == 0x004) {
++        f1gs_lcd_irq_update(s);
++    }
++}
++
++static uint64_t f1gs_pwm_read(void *opaque, hwaddr off, unsigned size)
++{
++    F1gsLcdState *s = opaque;
++
++    return off < sizeof(s->pwm) ? s->pwm[off / 4] : 0;
++}
++
++static void f1gs_pwm_write(void *opaque, hwaddr off, uint64_t val,
++                           unsigned size)
++{
++    F1gsLcdState *s = opaque;
++
++    if (off < sizeof(s->pwm)) {
++        s->pwm[off / 4] = val;
++    }
++}
++
++static const MemoryRegionOps f1gs_debe_ops = {
++    .read = f1gs_debe_read, .write = f1gs_debe_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4, .valid.max_access_size = 4,
++};
++static const MemoryRegionOps f1gs_tcon_ops = {
++    .read = f1gs_tcon_read, .write = f1gs_tcon_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4, .valid.max_access_size = 4,
++};
++static const MemoryRegionOps f1gs_pwm_ops = {
++    .read = f1gs_pwm_read, .write = f1gs_pwm_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4, .valid.max_access_size = 4,
++};
++
++static void f1gs_lcd_init(Object *obj)
++{
++    F1gsLcdState *s = F1GS_LCD(obj);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
++
++    memory_region_init_io(&s->debe_mem, obj, &f1gs_debe_ops, s,
++                          "suniv-debe", 0x10000);
++    memory_region_init_io(&s->tcon_mem, obj, &f1gs_tcon_ops, s,
++                          "suniv-tcon", 0x1000);
++    memory_region_init_io(&s->pwm_mem, obj, &f1gs_pwm_ops, s,
++                          "suniv-pwm", 0x400);
++    sysbus_init_mmio(sbd, &s->debe_mem);
++    sysbus_init_mmio(sbd, &s->tcon_mem);
++    sysbus_init_mmio(sbd, &s->pwm_mem);
++    sysbus_init_irq(sbd, &s->irq);
++}
++
++static void f1gs_lcd_realize(DeviceState *dev, Error **errp)
++{
++    F1gsLcdState *s = F1GS_LCD(dev);
++
++    if (s->scale < 1 || s->scale > 4) {
++        error_setg(errp, "scale must be 1 to 4");
++        return;
++    }
++    s->con = graphic_console_init(dev, 0, &f1gs_lcd_gfx_ops, s);
++    qemu_console_resize(s->con, PANEL_W * s->scale, PANEL_H * s->scale);
++    s->vblank = timer_new_ns(QEMU_CLOCK_VIRTUAL, f1gs_lcd_vblank, s);
++}
++
++static void f1gs_lcd_reset(DeviceState *dev)
++{
++    F1gsLcdState *s = F1GS_LCD(dev);
++
++    memset(s->debe, 0, sizeof(s->debe));
++    memset(s->tcon, 0, sizeof(s->tcon));
++    memset(s->pwm, 0, sizeof(s->pwm));
++    timer_mod(s->vblank, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + VBLANK_NS);
++}
++
++static Property f1gs_lcd_props[] = {
++    DEFINE_PROP_UINT32("scale", F1gsLcdState, scale, 2),
++    DEFINE_PROP_BOOL("rotate", F1gsLcdState, rotate, true),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static void f1gs_lcd_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = f1gs_lcd_realize;
++    device_class_set_legacy_reset(dc, f1gs_lcd_reset);
++    device_class_set_props(dc, f1gs_lcd_props);
++}
++
++/* ------------------------------------------------------------------ */
++/* Sound: normal DMA channel 0 -> audio codec DAC -> host audio        */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_F1GS_AUDIO "f1gs-audio"
++OBJECT_DECLARE_SIMPLE_TYPE(F1gsAudioState, F1GS_AUDIO)
++
++struct F1gsAudioState {
++    SysBusDevice parent_obj;
++    MemoryRegion dma_mem;
++    MemoryRegion codec_mem;
++    qemu_irq irq;
++    QEMUSoundCard card;
++    SWVoiceOut *voice;
++    SunivCcuState *ccu;
++    int rate;
++    uint32_t dma[0x200 / 4];
++    uint32_t codec[0x100 / 4];
++    bool running;
++    uint32_t src, count, pos;
++    uint8_t buf[4096];
++};
++
++#define NDMA0_CFG  (0x100 / 4)
++#define NDMA0_SRC  (0x104 / 4)
++#define NDMA0_DST  (0x108 / 4)
++#define NDMA0_CNT  (0x10c / 4)
++
++static void f1gs_audio_irq_update(F1gsAudioState *s)
++{
++    qemu_set_irq(s->irq, !!(s->dma[0] & s->dma[1]));
++}
++
++static int f1gs_audio_rate(F1gsAudioState *s)
++{
++    static const int r48[8] = { 48000, 32000, 24000, 16000,
++                                12000, 8000, 192000, 96000 };
++    static const int r44[8] = { 44100, 32000, 22050, 16000,
++                                11025, 8000, 192000, 96000 };
++    int idx = s->codec[1] >> 29;
++    /* the driver picks PLL_AUDIO 0x90003f10 for the 44.1 kHz family */
++    bool f44 = s->ccu && (s->ccu->regs[0x008 / 4] & 0xffff) == 0x3f10;
++
++    return f44 ? r44[idx] : r48[idx];
++}
++
++static void f1gs_audio_volume(F1gsAudioState *s)
++{
++    int vol = (s->codec[0x20 / 4] & 0x3f) * 255 / 63;
++
++    if (s->voice) {
++        AUD_set_volume_out(s->voice, vol == 0, vol, vol);
++    }
++}
++
++static void f1gs_audio_out(void *opaque, int free);
++
++static void f1gs_audio_open(F1gsAudioState *s)
++{
++    struct audsettings as = {
++        .freq = f1gs_audio_rate(s),
++        .nchannels = 2,
++        .fmt = AUDIO_FORMAT_S16,
++        .endianness = 0,
++    };
++
++    if (!s->voice || as.freq != s->rate) {
++        s->rate = as.freq;
++        s->voice = AUD_open_out(&s->card, s->voice, "f1gs.dac", s,
++                                f1gs_audio_out, &as);
++        f1gs_audio_volume(s);
++    }
++}
++
++static void f1gs_audio_done(F1gsAudioState *s)
++{
++    s->running = false;
++    s->dma[NDMA0_CFG] &= ~(1u << 31);
++    s->dma[1] |= 2;                     /* NDMA0 full transfer */
++    f1gs_audio_irq_update(s);
++}
++
++static void f1gs_audio_out(void *opaque, int free)
++{
++    F1gsAudioState *s = opaque;
++
++    while (s->running && free > 0) {
++        int n = MIN(MIN(free, (int)sizeof(s->buf)), s->count - s->pos);
++        int done;
++
++        dma_memory_read(&address_space_memory, s->src + s->pos, s->buf, n,
++                        MEMTXATTRS_UNSPECIFIED);
++        done = AUD_write(s->voice, s->buf, n);
++        if (s->pos < s->count / 2 && s->pos + done >= s->count / 2) {
++            s->dma[1] |= 1;             /* NDMA0 half transfer */
++            f1gs_audio_irq_update(s);
++        }
++        s->pos += done;
++        free -= done;
++        if (s->pos >= s->count) {
++            f1gs_audio_done(s);
++        }
++        if (done < n) {
++            break;
++        }
++    }
++}
++
++static void f1gs_audio_start(F1gsAudioState *s)
++{
++    s->src = s->dma[NDMA0_SRC];
++    s->count = s->dma[NDMA0_CNT] & 0x1ffff;
++    s->pos = 0;
++    if (!s->count) {
++        f1gs_audio_done(s);
++        return;
++    }
++    s->running = true;
++    f1gs_audio_open(s);
++    if (s->voice) {
++        AUD_set_active_out(s->voice, 1);
++    }
++}
++
++static uint64_t f1gs_dma_read(void *opaque, hwaddr off, unsigned size)
++{
++    F1gsAudioState *s = opaque;
++
++    return off < sizeof(s->dma) ? s->dma[off / 4] : 0;
++}
++
++static void f1gs_dma_write(void *opaque, hwaddr off, uint64_t val,
++                           unsigned size)
++{
++    F1gsAudioState *s = opaque;
++
++    if (off >= sizeof(s->dma)) {
++        return;
++    }
++    switch (off / 4) {
++    case 1:
++        s->dma[1] &= ~val;
++        break;
++    case NDMA0_CFG:
++        s->dma[NDMA0_CFG] = val;
++        if ((val & (1u << 31)) && !s->running) {
++            f1gs_audio_start(s);
++        } else if (!(val & (1u << 31))) {
++            s->running = false;
++        }
++        break;
++    default:
++        s->dma[off / 4] = val;
++        break;
++    }
++    f1gs_audio_irq_update(s);
++}
++
++static uint64_t f1gs_codec_read(void *opaque, hwaddr off, unsigned size)
++{
++    F1gsAudioState *s = opaque;
++
++    if (off == 0x08) {
++        return 0x00800008 | (0x80 << 8);  /* TX FIFO empty, room to write */
++    }
++    return off < sizeof(s->codec) ? s->codec[off / 4] : 0;
++}
++
++static void f1gs_codec_write(void *opaque, hwaddr off, uint64_t val,
++                             unsigned size)
++{
++    F1gsAudioState *s = opaque;
++
++    if (off < sizeof(s->codec)) {
++        s->codec[off / 4] = val;
++    }
++    if (off == 0x20) {
++        f1gs_audio_volume(s);
++    }
++}
++
++static const MemoryRegionOps f1gs_dma_ops = {
++    .read = f1gs_dma_read, .write = f1gs_dma_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4, .valid.max_access_size = 4,
++};
++static const MemoryRegionOps f1gs_codec_ops = {
++    .read = f1gs_codec_read, .write = f1gs_codec_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid.min_access_size = 4, .valid.max_access_size = 4,
++};
++
++static void f1gs_audio_init(Object *obj)
++{
++    F1gsAudioState *s = F1GS_AUDIO(obj);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
++
++    memory_region_init_io(&s->dma_mem, obj, &f1gs_dma_ops, s,
++                          "suniv-dma", 0x1000);
++    memory_region_init_io(&s->codec_mem, obj, &f1gs_codec_ops, s,
++                          "suniv-codec", 0x400);
++    sysbus_init_mmio(sbd, &s->dma_mem);
++    sysbus_init_mmio(sbd, &s->codec_mem);
++    sysbus_init_irq(sbd, &s->irq);
++}
++
++static void f1gs_audio_realize(DeviceState *dev, Error **errp)
++{
++    F1gsAudioState *s = F1GS_AUDIO(dev);
++
++    if (!AUD_register_card("f1gs", &s->card, errp)) {
++        return;
++    }
++    f1gs_audio_open(s);
++}
++
++static void f1gs_audio_reset(DeviceState *dev)
++{
++    F1gsAudioState *s = F1GS_AUDIO(dev);
++
++    memset(s->dma, 0, sizeof(s->dma));
++    memset(s->codec, 0, sizeof(s->codec));
++    s->running = false;
++    if (s->voice) {
++        AUD_set_active_out(s->voice, 0);
++    }
++}
++
++static Property f1gs_audio_props[] = {
++    DEFINE_AUDIO_PROPERTIES(F1gsAudioState, card),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static void f1gs_audio_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = f1gs_audio_realize;
++    device_class_set_legacy_reset(dc, f1gs_audio_reset);
++    device_class_set_props(dc, f1gs_audio_props);
++}
++
++/* ------------------------------------------------------------------ */
++/* The board                                                           */
++/* ------------------------------------------------------------------ */
++
++#define TYPE_F1GS_MACHINE MACHINE_TYPE_NAME("f1gamestation")
++OBJECT_DECLARE_SIMPLE_TYPE(F1gsMachineState, F1GS_MACHINE)
++
++struct F1gsMachineState {
++    MachineState parent_obj;
++    uint32_t scale;
++    bool rotate;
++    uint32_t battery_mv;
++};
++
++static struct arm_boot_info f1gs_binfo;
++
++/* Peripherals the emulator does not model: keep their drivers away. */
++static void f1gs_modify_dtb(const struct arm_boot_info *info, void *fdt)
++{
++    static const char * const compat[] = {
++        "allwinner,suniv-f1c100s-spi",
++        "allwinner,suniv-f1c100s-musb",
++        "allwinner,suniv-f1c100s-usb-phy",
++        "allwinner,suniv-f1c100s-cedar",
++    };
++
++    int node;
++
++    /* -drive if=sd,index=1: the second slot (MMC1) is a shared disk */
++    if (drive_get(IF_SD, 1, 0)) {
++        node = fdt_node_offset_by_prop_value(fdt, -1, "reg",
++                                             (const uint32_t[]){
++                                                 cpu_to_be32(F1GS_MMC1_BASE),
++                                                 cpu_to_be32(0x1000) }, 8);
++        if (node >= 0) {
++            fdt_setprop_string(fdt, node, "status", "okay");
++            fdt_setprop_u32(fdt, node, "bus-width", 4);
++            fdt_setprop(fdt, node, "broken-cd", NULL, 0);
++            /* same 3.3 V supply as MMC0, or the core finds no voltages */
++            int mmc0 = fdt_node_offset_by_prop_value(fdt, -1, "reg",
++                                             (const uint32_t[]){
++                                                 cpu_to_be32(F1GS_MMC0_BASE),
++                                                 cpu_to_be32(0x1000) }, 8);
++            int len;
++            const void *vmmc = mmc0 >= 0 ?
++                fdt_getprop(fdt, mmc0, "vmmc-supply", &len) : NULL;
++            if (vmmc) {
++                fdt_setprop(fdt, node, "vmmc-supply", vmmc, len);
++            }
++        }
++    }
++
++    for (size_t i = 0; i < ARRAY_SIZE(compat); i++) {
++        node = -1;
++        while ((node = fdt_node_offset_by_compatible(fdt, node,
++                                                     compat[i])) >= 0) {
++            fdt_setprop_string(fdt, node, "status", "disabled");
++        }
++    }
++}
++
++static DeviceState *f1gs_sysbus(const char *type, hwaddr base, int irq,
++                                DeviceState *intc)
++{
++    DeviceState *dev = qdev_new(type);
++
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
++    if (irq >= 0) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
++                           qdev_get_gpio_in(intc, irq));
++    }
++    return dev;
++}
++
++static void f1gs_init(MachineState *machine)
++{
++    F1gsMachineState *fm = F1GS_MACHINE(machine);
++    MemoryRegion *sysmem = get_system_memory();
++    MemoryRegion *sram_a = g_new(MemoryRegion, 1);
++    MemoryRegion *sram_c = g_new(MemoryRegion, 1);
++    ARMCPU *cpu;
++    DeviceState *intc, *dev, *ccu, *carddev;
++    DriveInfo *di;
++    BlockBackend *blk;
++
++    if (machine->ram_size > 64 * MiB) {
++        error_report("The F1C200s has 64 MiB of DRAM");
++        exit(1);
++    }
++
++    cpu = ARM_CPU(cpu_create(machine->cpu_type));
++    memory_region_add_subregion(sysmem, F1GS_SDRAM_BASE, machine->ram);
++
++    memory_region_init_ram(sram_a, NULL, "f1gs.sram-a", 64 * KiB,
++                           &error_fatal);
++    memory_region_add_subregion(sysmem, 0x00000000, sram_a);
++    memory_region_init_ram(sram_c, NULL, "f1gs.sram-c", 512 * KiB,
++                           &error_fatal);
++    memory_region_add_subregion(sysmem, 0x01d00000, sram_c);
++
++    /* interrupt controller */
++    intc = qdev_new(TYPE_SUNIV_INTC);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(intc), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(intc), 0, F1GS_INTC_BASE);
++    sysbus_connect_irq(SYS_BUS_DEVICE(intc), 0,
++                       qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
++    sysbus_connect_irq(SYS_BUS_DEVICE(intc), 1,
++                       qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
++
++    /* timers: sun4i layout, LOSC 32 kHz and OSC 24 MHz sources */
++    dev = qdev_new(TYPE_AW_A10_PIT);
++    qdev_prop_set_uint32(dev, "clk0-freq", 32768);
++    qdev_prop_set_uint32(dev, "clk1-freq", 24000000);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, F1GS_TIMER_BASE);
++    for (int i = 0; i < 3; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i,
++                           qdev_get_gpio_in(intc, F1GS_IRQ_TIMER0 + i));
++    }
++    dev = qdev_new(TYPE_SUNIV_WDT);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, F1GS_WDT_BASE, 1);
++
++    ccu = f1gs_sysbus(TYPE_SUNIV_CCU, F1GS_CCU_BASE, -1, intc);
++    f1gs_sysbus(TYPE_SUNIV_PIO, F1GS_PIO_BASE, -1, intc);
++
++    dev = qdev_new(TYPE_SUNIV_LRADC);
++    qdev_prop_set_uint32(dev, "battery-mv", fm->battery_mv);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, F1GS_LRADC_BASE);
++
++    /* debug UART (8250_dw: the extra registers above 0x1c read as 0) */
++    create_unimplemented_device("uart0-dw", F1GS_UART0_BASE, 0x400);
++    serial_mm_init(sysmem, F1GS_UART0_BASE, 2,
++                   qdev_get_gpio_in(intc, F1GS_IRQ_UART0), 115200,
++                   serial_hd(0), DEVICE_NATIVE_ENDIAN);
++
++    /* SD card slot (MMC0) and the optional shared disk on MMC1 */
++    for (int i = 0; i < 2; i++) {
++        di = drive_get(IF_SD, i, 0);
++        if (i == 1 && !di) {
++            create_unimplemented_device("mmc1", F1GS_MMC1_BASE, 0x1000);
++            break;
++        }
++        dev = qdev_new(TYPE_AW_SDHOST_SUN5I);
++        object_property_set_link(OBJECT(dev), "dma-memory", OBJECT(sysmem),
++                                 &error_fatal);
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++        sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0,
++                        i ? F1GS_MMC1_BASE : F1GS_MMC0_BASE);
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
++                           qdev_get_gpio_in(intc, F1GS_IRQ_MMC0 + i));
++        blk = di ? blk_by_legacy_dinfo(di) : NULL;
++        carddev = qdev_new(TYPE_SD_CARD);
++        qdev_prop_set_drive_err(carddev, "drive", blk, &error_fatal);
++        qdev_realize_and_unref(carddev, qdev_get_child_bus(dev, "sd-bus"),
++                               &error_fatal);
++    }
++
++    /* display */
++    dev = qdev_new(TYPE_F1GS_LCD);
++    qdev_prop_set_uint32(dev, "scale", fm->scale);
++    qdev_prop_set_bit(dev, "rotate", fm->rotate);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, F1GS_DEBE_BASE);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, F1GS_TCON_BASE);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 2, F1GS_PWM_BASE);
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
++                       qdev_get_gpio_in(intc, F1GS_IRQ_TCON));
++
++    /* sound */
++    dev = qdev_new(TYPE_F1GS_AUDIO);
++    F1GS_AUDIO(dev)->ccu = SUNIV_CCU(ccu);
++    if (machine->audiodev) {
++        qdev_prop_set_string(dev, "audiodev", machine->audiodev);
++    }
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, F1GS_DMA_BASE);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, F1GS_CODEC_BASE);
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
++                       qdev_get_gpio_in(intc, F1GS_IRQ_DMA));
++
++    /* the rest reads as zero */
++    create_unimplemented_device("sram-ctrl", 0x01c00000, 0x1000);
++    create_unimplemented_device("spi0", F1GS_SPI0_BASE, 0x1000);
++    create_unimplemented_device("spi1", F1GS_SPI1_BASE, 0x1000);
++    create_unimplemented_device("tve", F1GS_TVE_BASE, 0x1000);
++    create_unimplemented_device("ve", F1GS_VE_BASE, 0x1000);
++    create_unimplemented_device("usb-otg", F1GS_USB_BASE, 0x1000);
++    create_unimplemented_device("daudio", F1GS_DA_BASE, 0x400);
++    create_unimplemented_device("uart1", 0x01c25400, 0x400);
++    create_unimplemented_device("uart2", 0x01c25800, 0x400);
++    create_unimplemented_device("defe", F1GS_DEFE_BASE, 0x20000);
++
++    f1gs_binfo.loader_start = F1GS_SDRAM_BASE;
++    f1gs_binfo.ram_size = machine->ram_size;
++    f1gs_binfo.board_id = -1;
++    f1gs_binfo.modify_dtb = f1gs_modify_dtb;
++    arm_load_kernel(cpu, machine, &f1gs_binfo);
++}
++
++static void f1gs_get_scale(Object *obj, Visitor *v, const char *name,
++                           void *opaque, Error **errp)
++{
++    visit_type_uint32(v, name, &F1GS_MACHINE(obj)->scale, errp);
++}
++
++static void f1gs_set_scale(Object *obj, Visitor *v, const char *name,
++                           void *opaque, Error **errp)
++{
++    visit_type_uint32(v, name, &F1GS_MACHINE(obj)->scale, errp);
++}
++
++static void f1gs_get_battery(Object *obj, Visitor *v, const char *name,
++                             void *opaque, Error **errp)
++{
++    visit_type_uint32(v, name, &F1GS_MACHINE(obj)->battery_mv, errp);
++}
++
++static void f1gs_set_battery(Object *obj, Visitor *v, const char *name,
++                             void *opaque, Error **errp)
++{
++    visit_type_uint32(v, name, &F1GS_MACHINE(obj)->battery_mv, errp);
++}
++
++static bool f1gs_get_rotate(Object *obj, Error **errp)
++{
++    return F1GS_MACHINE(obj)->rotate;
++}
++
++static void f1gs_set_rotate(Object *obj, bool value, Error **errp)
++{
++    F1GS_MACHINE(obj)->rotate = value;
++}
++
++static void f1gs_machine_instance_init(Object *obj)
++{
++    F1gsMachineState *fm = F1GS_MACHINE(obj);
++
++    fm->scale = 2;
++    fm->rotate = true;
++    fm->battery_mv = 3900;
++}
++
++static void f1gs_machine_class_init(ObjectClass *oc, void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(oc);
++
++    mc->desc = "F1GameStation handheld (Allwinner F1C200s, ARM926EJ-S)";
++    mc->init = f1gs_init;
++    mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
++    mc->default_ram_size = 64 * MiB;
++    mc->default_ram_id = "f1gs.ram";
++    mc->block_default_type = IF_SD;
++    mc->units_per_default_bus = 1;
++    mc->ignore_memory_transaction_failures = true;
++    machine_add_audiodev_property(mc);
++
++    object_class_property_add(oc, "scale", "uint32", f1gs_get_scale,
++                              f1gs_set_scale, NULL, NULL);
++    object_class_property_set_description(oc, "scale",
++        "Window size as a multiple of the 480x272 panel (1-4, default 2)");
++    object_class_property_add_bool(oc, "rotate", f1gs_get_rotate,
++                                   f1gs_set_rotate);
++    object_class_property_set_description(oc, "rotate",
++        "Undo the kernel's 180 degree panel rotation (default on)");
++    object_class_property_add(oc, "battery-mv", "uint32", f1gs_get_battery,
++                              f1gs_set_battery, NULL, NULL);
++    object_class_property_set_description(oc, "battery-mv",
++        "Battery voltage reported on LRADC0 in mV (default 3900)");
++}
++
++static const TypeInfo f1gs_types[] = {
++    {
++        .name = TYPE_SUNIV_INTC, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(SunivIntcState),
++        .instance_init = suniv_intc_init,
++        .class_init = suniv_intc_class_init,
++    }, {
++        .name = TYPE_SUNIV_CCU, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(SunivCcuState),
++        .instance_init = suniv_ccu_init,
++        .class_init = suniv_ccu_class_init,
++    }, {
++        .name = TYPE_SUNIV_WDT, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(SunivWdtState),
++        .instance_init = suniv_wdt_init,
++        .class_init = suniv_wdt_class_init,
++    }, {
++        .name = TYPE_SUNIV_PIO, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(SunivPioState),
++        .instance_init = suniv_pio_init,
++        .class_init = suniv_pio_class_init,
++    }, {
++        .name = TYPE_SUNIV_LRADC, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(SunivLradcState),
++        .instance_init = suniv_lradc_init,
++        .class_init = suniv_lradc_class_init,
++    }, {
++        .name = TYPE_F1GS_LCD, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(F1gsLcdState),
++        .instance_init = f1gs_lcd_init,
++        .class_init = f1gs_lcd_class_init,
++    }, {
++        .name = TYPE_F1GS_AUDIO, .parent = TYPE_SYS_BUS_DEVICE,
++        .instance_size = sizeof(F1gsAudioState),
++        .instance_init = f1gs_audio_init,
++        .class_init = f1gs_audio_class_init,
++    }, {
++        .name = TYPE_F1GS_MACHINE, .parent = TYPE_MACHINE,
++        .instance_size = sizeof(F1gsMachineState),
++        .instance_init = f1gs_machine_instance_init,
++        .class_init = f1gs_machine_class_init,
++    },
++};
++
++DEFINE_TYPES(f1gs_types)
+diff --git a/hw/arm/meson.build b/hw/arm/meson.build
+index 490234b..e3a9ec9 100644
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -24,6 +24,7 @@ arm_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210.c'))
+ arm_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic.c'))
+ arm_ss.add(when: 'CONFIG_OMAP', if_true: files('omap1.c'))
+ arm_ss.add(when: 'CONFIG_ALLWINNER_A10', if_true: files('allwinner-a10.c', 'cubieboard.c'))
++arm_ss.add(when: 'CONFIG_F1GAMESTATION', if_true: files('f1gamestation.c'))
+ arm_ss.add(when: 'CONFIG_ALLWINNER_H3', if_true: files('allwinner-h3.c', 'orangepi.c'))
+ arm_ss.add(when: 'CONFIG_ALLWINNER_R40', if_true: files('allwinner-r40.c', 'bananapi_m2u.c'))
+ arm_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2836.c', 'raspi.c'))
+diff --git a/hw/sd/Kconfig b/hw/sd/Kconfig
+index 633b9af..d479080 100644
+--- a/hw/sd/Kconfig
++++ b/hw/sd/Kconfig
+@@ -23,3 +23,7 @@ config SDHCI_PCI
+ config CADENCE_SDHCI
+     bool
+     select SDHCI
++
++config ALLWINNER_SDHOST
++    bool
++    select SD
+diff --git a/hw/sd/meson.build b/hw/sd/meson.build
+index b43d45b..7c644ca 100644
+--- a/hw/sd/meson.build
++++ b/hw/sd/meson.build
+@@ -7,6 +7,6 @@ system_ss.add(when: 'CONFIG_SSI_SD', if_true: files('ssi-sd.c'))
+ system_ss.add(when: 'CONFIG_OMAP', if_true: files('omap_mmc.c'))
+ system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_sdhost.c'))
+ system_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files('aspeed_sdhci.c'))
+-system_ss.add(when: 'CONFIG_ALLWINNER_H3', if_true: files('allwinner-sdhost.c'))
++system_ss.add(when: 'CONFIG_ALLWINNER_SDHOST', if_true: files('allwinner-sdhost.c'))
+ system_ss.add(when: 'CONFIG_NPCM7XX', if_true: files('npcm7xx_sdhci.c'))
+ system_ss.add(when: 'CONFIG_CADENCE_SDHCI', if_true: files('cadence_sdhci.c'))
+-- 
+2.43.0
+

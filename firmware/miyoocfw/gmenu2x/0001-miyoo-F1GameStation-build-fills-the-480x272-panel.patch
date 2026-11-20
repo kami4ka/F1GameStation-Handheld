@@ -1,0 +1,102 @@
+From 7f220454c868cd9277378fdabae99105ca33d87b Mon Sep 17 00:00:00 2001
+From: Oleg Kulyk <5595029+kami4ka@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 15:06:21 +0000
+Subject: [PATCH] miyoo: F1GameStation build fills the 480x272 panel
+
+With -DF1GS_PANEL the menu runs at 480x272. SDL 1.2's fbcon only offers
+its built-in mode list, which has no 480x272, so the panel is switched
+first and SDL_FB_BROKEN_MODES makes SDL take the current mode. The
+variable is cleared after SDL_Init, and on quit (before an app or game
+is launched) the panel is set back to 320x240, so everything started
+from the menu sees the usual MiyooCFW screen, which the panel driver
+shows centred.
+---
+ src/gmenu2x.cpp      |  3 +++
+ src/platform/miyoo.h | 40 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+diff --git a/src/gmenu2x.cpp b/src/gmenu2x.cpp
+index 7885f7b..13bd115 100644
+--- a/src/gmenu2x.cpp
++++ b/src/gmenu2x.cpp
+@@ -267,6 +267,9 @@ void GMenu2X::main(bool autoStart) {
+ 		quit();
+ 		return;
+ 	}
++#if defined(F1GS_PANEL)
++	unsetenv("SDL_FB_BROKEN_MODES"); // set by hwInit, games must not inherit it
++#endif
+ 	SDL_ShowCursor(SDL_DISABLE);
+ 
+ 	input.init(exe_path() + "/input.conf");
+diff --git a/src/platform/miyoo.h b/src/platform/miyoo.h
+index 56163f4..25a5a26 100644
+--- a/src/platform/miyoo.h
++++ b/src/platform/miyoo.h
+@@ -2,6 +2,7 @@
+ #define HW_MIYOO_H
+ 
+ #include <sys/mman.h>
++#include <linux/fb.h>
+ #include <bitset>
+ 
+ // 	MiyooCFW 2.0 Key Codes. Apaczer, 2023
+@@ -193,7 +194,32 @@ uint8_t getVolumeMode(uint8_t vol) {
+ 
+ class GMenu2X_platform : public GMenu2X {
+ private:
++#if defined(F1GS_PANEL)
++	static bool setPanelMode(int w, int h) {
++		bool ok = false;
++		int fbdev = open("/dev/fb0", O_RDWR);
++		if (fbdev >= 0) {
++			struct fb_var_screeninfo var;
++			if (ioctl(fbdev, FBIOGET_VSCREENINFO, &var) == 0) {
++				var.xres = var.xres_virtual = w;
++				var.yres = h;
++				var.yres_virtual = h * 2;
++				var.xoffset = var.yoffset = 0;
++				var.bits_per_pixel = 16;
++				ok = ioctl(fbdev, FBIOPUT_VSCREENINFO, &var) == 0;
++			}
++			close(fbdev);
++		}
++		return ok;
++	}
++#endif
++
+ 	void hwDeinit() {
++#if defined(F1GS_PANEL)
++		/* hand the usual 320x240 screen to whatever runs next (SDL_Quit
++		 * has just put back the 480x272 mode the menu started with) */
++		setPanelMode(320, 240);
++#endif
+ 	}
+ 
+ 	void hwInit() {
+@@ -211,8 +237,22 @@ private:
+ 		//system("mount -o remount,async /mnt");
+ 		getKbdLayoutHW();
+ 		getTefixHW();
++#if defined(F1GS_PANEL)
++		/* F1GameStation: the menu fills the 480x272 panel; games keep
++		 * asking for 320x240 and the panel driver centres them.
++		 * SDL's fbcon only offers its built-in mode list (no 480x272),
++		 * so switch the panel first and have SDL take the current mode;
++		 * the variable is cleared again after SDL_Init so games still
++		 * get their usual list, and hwDeinit sets 320x240 back before
++		 * an app or game starts. */
++		w = 480;
++		h = 272;
++		if (setPanelMode(w, h))
++			setenv("SDL_FB_BROKEN_MODES", "1", 1);
++#else
+ 		w = 320;
+ 		h = 240;
++#endif
+ 		INFO("MIYOO");
+ 	}
+ 
+-- 
+2.43.0
+
