@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/enclosure-iso.png" alt="F1GameStation" width="760">
+  <img src="docs/images/hero-two-builds.jpg" alt="Дві консолі F1GameStation, біла й чорна, з лаунчером" width="760">
 </p>
 
 <p align="center">
@@ -98,11 +98,10 @@ site/           сайт проєкту (3D переглядач, KiCanvas) дл
 ## Галерея
 
 <p>
+  <img src="docs/images/white-build.jpg" width="49%" alt="Біла збірка">
+  <img src="docs/images/board-test-pattern.jpg" width="24%" alt="Плата Rev 1 з тестовим зображенням на екрані">
   <img src="docs/images/launcher-shelf.png" width="49%" alt="Лаунчер cover-flow">
-  <img src="docs/images/launcher-menu.png" width="49%" alt="Швидке меню лаунчера">
-  <img src="docs/images/enclosure_front.png" width="49%" alt="Корпус спереду">
-  <img src="docs/images/enclosure_back.png" width="49%" alt="Корпус ззаду">
-  <img src="docs/images/layer_1_F_Cu.png" width="49%" alt="Верхній шар міді">
+  <img src="docs/images/enclosure-iso.png" width="49%" alt="Рендер корпусу">
   <img src="docs/images/pcba-battery.png" width="49%" alt="Плата з батареєю">
 </p>
 

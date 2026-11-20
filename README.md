@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/enclosure-iso.png" alt="F1GameStation" width="760">
+  <img src="docs/images/hero-two-builds.jpg" alt="Two F1GameStation handhelds, white and black, showing the launcher" width="760">
 </p>
 
 <p align="center">
@@ -98,11 +98,10 @@ No hardware yet? The [emulator](firmware/emulator/README.md) boots the same SD c
 ## Gallery
 
 <p>
+  <img src="docs/images/white-build.jpg" width="49%" alt="White build">
+  <img src="docs/images/board-test-pattern.jpg" width="24%" alt="Rev 1 board showing the LCD test pattern">
   <img src="docs/images/launcher-shelf.png" width="49%" alt="Cover-flow launcher">
-  <img src="docs/images/launcher-menu.png" width="49%" alt="Launcher quick menu">
-  <img src="docs/images/enclosure_front.png" width="49%" alt="Enclosure, front">
-  <img src="docs/images/enclosure_back.png" width="49%" alt="Enclosure, back">
-  <img src="docs/images/layer_1_F_Cu.png" width="49%" alt="PCB front copper">
+  <img src="docs/images/enclosure-iso.png" width="49%" alt="Enclosure render">
   <img src="docs/images/pcba-battery.png" width="49%" alt="PCBA with battery">
 </p>
 

@@ -160,7 +160,7 @@ td code, p code { font: 13px var(--mono); color: var(--copper-2); }
 /* gallery */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .gallery figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
-.gallery img { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; }
+.gallery img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
 .gallery figcaption { padding: 8px 12px; font: 12px var(--mono); color: var(--ink-3); }
 
 footer { margin-top: 80px; border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--ink-3); font: 13px var(--mono); }
@@ -278,10 +278,12 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; }
   <section id="gallery">
     <div class="sh"><span class="n">05</span><h2>Gallery</h2><p>Rev 1 hardware and the launcher</p></div>
     <div class="gallery">
-      <figure><img src="images/launcher-shelf.png" alt="Cover-flow launcher shelf" loading="lazy"><figcaption>Cover-flow launcher (emulator capture)</figcaption></figure>
+      <figure><img src="images/hero-two-builds.jpg" alt="Black and white builds running the launcher" loading="lazy"><figcaption>Two Rev 1 builds, black and white PETG</figcaption></figure>
+      <figure><img src="images/white-build.jpg" alt="White build" loading="lazy"><figcaption>White build, UART leads still attached</figcaption></figure>
+      <figure><img src="images/board-test-pattern.jpg" alt="Board with LCD test pattern" loading="lazy"><figcaption>Bring-up: LCD test pattern over FEL</figcaption></figure>
+      <figure><img src="images/launcher-shelf.png" alt="Cover-flow launcher" loading="lazy"><figcaption>Cover-flow launcher (emulator, test art)</figcaption></figure>
       <figure><img src="images/launcher-menu.png" alt="Launcher quick menu" loading="lazy"><figcaption>Quick menu: screen modes, volume, brightness</figcaption></figure>
       <figure><img src="images/enclosure-iso.png" alt="Enclosure render" loading="lazy"><figcaption>Enclosure, Fusion render</figcaption></figure>
-      <figure><img src="images/pcba-battery.png" alt="PCBA with battery" loading="lazy"><figcaption>PCBA with the 606090 cell</figcaption></figure>
     </div>
   </section>
 </main>
