@@ -24,7 +24,7 @@
   <a href="https://kami4ka.github.io/F1GameStation-Handheld/"><b>Interactive 3D model and board viewer</b></a> ·
   <a href="docs/BUILD.md"><b>Build guide</b></a> ·
   <a href="https://kami4ka.github.io/F1GameStation-Handheld/ibom.html"><b>Interactive BOM</b></a> ·
-  <a href="https://github.com/kami4ka/F1GameStation-Handheld/releases"><b>SD card image</b></a>
+  <a href="firmware/README.md"><b>Firmware</b></a>
 </p>
 
 > [!NOTE]
@@ -66,7 +66,7 @@ The [build guide](docs/BUILD.md) walks through it step by step:
 
 1. **Order the board** from JLCPCB with the files in [`hardware/production`](hardware/production).
 2. **Finish the assembly**: the SoC and DC-DC are supplied by you, then the LCD, battery and speaker.
-3. **Flash a microSD card** with the [prebuilt image](https://github.com/kami4ka/F1GameStation-Handheld/releases), or [build the firmware](firmware/README.md).
+3. **Build the firmware** from source and flash it to a microSD card ([firmware/README.md](firmware/README.md)).
 4. **Print the case** from [`enclosure/print`](enclosure/print).
 5. **Close it up** with four M2 heat-set inserts, two filament pins and four M2 × 12 screws.
 

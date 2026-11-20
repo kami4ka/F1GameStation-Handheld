@@ -203,7 +203,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; }
       </div>
       <div class="cta">
         <a class="btn primary" href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md">Build guide</a>
-        <a class="btn" href="https://github.com/kami4ka/F1GameStation-Handheld/releases">Downloads</a>
+        <a class="btn" href="https://github.com/kami4ka/F1GameStation-Handheld">Source</a>
         <a class="btn" href="ibom.html">Interactive BOM</a>
       </div>
     </div>
@@ -254,7 +254,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; }
     <div class="steps">
       <div class="step"><h3>Order the board</h3><p>Upload the Gerber zip, BOM and positions to JLCPCB. 4 layers, JLC04161H-7628.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/hardware/production">hardware/production →</a></div>
       <div class="step"><h3>Finish assembly</h3><p>Fit the SoC and the hand-placed parts, then the LCD, battery and speaker.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md#2-assemble-the-board">assembly notes →</a></div>
-      <div class="step"><h3>Flash the card</h3><p>Write the prebuilt image to a microSD card, or build kernel, menu and launcher yourself.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/firmware">firmware →</a></div>
+      <div class="step"><h3>Flash the card</h3><p>Build the kernel, menu and launcher in Docker and write the card image to microSD.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/firmware">firmware →</a></div>
       <div class="step"><h3>Print the case</h3><p>Shells, triggers and caps in PETG; labelled caps print in two colours.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/tree/main/enclosure">enclosure →</a></div>
       <div class="step"><h3>Close it up</h3><p>Heat-set inserts, filament trigger pins, four M2 screws.</p><a href="https://github.com/kami4ka/F1GameStation-Handheld/blob/main/docs/BUILD.md#5-final-assembly">final assembly →</a></div>
     </div>
@@ -271,8 +271,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; }
       <tr><td>Editable case</td><td><code>enclosure/source/</code></td><td>Fusion .f3d, STEP, parametric Python</td></tr>
       <tr><td>Kernel, menu, launcher</td><td><code>firmware/</code></td><td>patches + Docker build</td></tr>
       <tr><td>Emulator</td><td><code>firmware/emulator/</code></td><td>QEMU board model</td></tr>
-      <tr><td>SD card image</td><td>Releases</td><td><code>.img.xz</code></td></tr>
-    </table></div>
+          </table></div>
   </section>
 
   <section id="gallery">

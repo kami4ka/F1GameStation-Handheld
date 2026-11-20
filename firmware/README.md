@@ -14,10 +14,8 @@ host except Docker itself.
 | [`launcher`](launcher) | the cover-flow game launcher ([README](launcher/README.md)) |
 | [`emulator`](emulator) | a QEMU model of the handheld ([README](emulator/README.md)) |
 
-## Just want a card?
-
-Download the SD image from the [Releases page](https://github.com/kami4ka/F1GameStation-Handheld/releases)
-and follow [docs/BUILD.md](../docs/BUILD.md#3-flash-the-microsd-card).
+There are no prebuilt images: build the card from these sources as described below, then flash it
+as in [docs/BUILD.md](../docs/BUILD.md#3-flash-the-microsd-card).
 
 ## Building
 

@@ -24,7 +24,7 @@
   <a href="https://kami4ka.github.io/F1GameStation-Handheld/"><b>Інтерактивна 3D модель і перегляд плати</b></a> ·
   <a href="docs/BUILD.md"><b>Інструкція зі збирання</b></a> (англ.) ·
   <a href="https://kami4ka.github.io/F1GameStation-Handheld/ibom.html"><b>Інтерактивний BOM</b></a> ·
-  <a href="https://github.com/kami4ka/F1GameStation-Handheld/releases"><b>Образ SD-картки</b></a>
+  <a href="firmware/README.md"><b>Прошивка</b></a>
 </p>
 
 > [!NOTE]
@@ -66,7 +66,7 @@ site/           сайт проєкту (3D переглядач, KiCanvas) дл
 
 1. **Замовте плату** на JLCPCB з файлами з [`hardware/production`](hardware/production).
 2. **Допаяйте плату**: SoC і DC-DC ставите самі, потім екран, батарею й динамік.
-3. **Запишіть microSD** з [готовим образом](https://github.com/kami4ka/F1GameStation-Handheld/releases) або [зберіть прошивку](firmware/README.md).
+3. **Зберіть прошивку** з вихідних кодів і запишіть її на microSD ([firmware/README.md](firmware/README.md)).
 4. **Надрукуйте корпус** з [`enclosure/print`](enclosure/print).
 5. **Зберіть усе разом**: чотири вставки M2, два штифти з філаменту й чотири гвинти M2 × 12.
 

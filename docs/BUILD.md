@@ -74,19 +74,16 @@ and hold the switch flat while soldering.
 
 ## 3. Flash the microSD card
 
-**Prebuilt image.** Download `f1gamestation-sd-*.img.xz` from the
-[Releases page](https://github.com/kami4ka/F1GameStation-Handheld/releases) and write it with
-[balenaEtcher](https://etcher.balena.io) or Raspberry Pi Imager (both read `.xz` directly), or:
+There is no prebuilt image: build the card image from source with
+[firmware/README.md](../firmware/README.md). You need Docker and about 10 GB of disk. The result,
+`deploy/f1gamestation-sd.img`, is MiyooCFW 2.0.0 beta 2 (musl) with the F1GameStation kernel, device
+tree, boot script, 480×272 menu and cover-flow launcher. It contains no games.
+
+Write it with [balenaEtcher](https://etcher.balena.io) or Raspberry Pi Imager, or:
 
 ```sh
-xz -dc f1gamestation-sd-rev1.img.xz | sudo dd of=/dev/rdiskN bs=4m   # macOS, check N with `diskutil list`
+sudo dd if=f1gamestation-sd.img of=/dev/rdiskN bs=4m   # macOS, check N with `diskutil list`
 ```
-
-The image is MiyooCFW 2.0.0 beta 2 (musl) with the F1GameStation kernel, device tree, boot script,
-480×272 menu and cover-flow launcher. It contains no games.
-
-**Build it yourself.** See [firmware/README.md](../firmware/README.md). You need Docker and about
-10 GB of disk.
 
 **Adding games.** After the card is written, the FAT partition called `BOOT` shows up on any computer.
 Copy ROMs into `BOOT/add-games/<SYSTEM>/` (`NES`, `SNES`, `GB`, `GBC`, `GBA`, `MD`, ...). On the next
