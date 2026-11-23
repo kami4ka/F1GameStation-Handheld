@@ -48,6 +48,33 @@ if [ ! -f "${HOME}/.f1gs-demo-roms-removed" ]; then
 	touch "${HOME}/.f1gs-demo-roms-removed"
 	sync
 fi
+# F1GameStation: removing games. Each line of remove-games.txt on the BOOT
+# partition names games in roms/ as <SYSTEM>/<file>, shell wildcards
+# allowed (e.g. "SNES/Super Mario Kart.*"). The ROM, its cover and its
+# names.txt line go; the list is deleted when done.
+if [ -f remove-games.txt ]; then
+	echo "Removing games..."
+	tr -d '\r' < remove-games.txt | while IFS= read -r pat; do
+		case $pat in ''|'#'*|*..*) continue ;; esac
+		sys=${pat%%/*}
+		[ "$sys" != "$pat" ] && [ -n "$sys" ] || continue
+		IFS= # wildcards in $pat expand, its spaces don't split it
+		for f in "${HOME}/roms/"$pat; do
+			[ -f "$f" ] || continue
+			name=$(basename "$f")
+			img="${HOME}/roms/${sys}/.images"
+			rm -f "$f" "${img}/${name%.*}.png" "${img}/${name%.*}.jpg"
+			if [ -f "${img}/names.txt" ]; then
+				awk -F '\t' -v n="$name" '$1 != n' "${img}/names.txt" > "${img}/names.new" &&
+					mv "${img}/names.new" "${img}/names.txt"
+			fi
+		done
+	done
+	mount -o remount,rw /boot
+	rm -f remove-games.txt
+	sync
+	mount -o remount,ro /boot
+fi
 # F1GameStation: games inbox. Games copied to add-games/<SYSTEM>/ on the
 # BOOT partition (FAT32, so any computer can write it) are moved to
 # roms/<SYSTEM>/, with the covers in .images/ and names.txt merged, as

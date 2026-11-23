@@ -16,3 +16,11 @@ before you eject the card (it is in the F1GameStation repository):
 
 On the next start the console moves everything from here into roms/ and the
 games appear in the launcher. This folder is emptied when that is done.
+
+To remove games, put a file remove-games.txt next to this folder (in the
+top of the BOOT volume) with one line per game, as <SYSTEM>/<file name>;
+wildcards work, e.g.
+
+    SNES/Super Mario Kart*
+
+They are deleted from roms/ (with their covers) on the next start.

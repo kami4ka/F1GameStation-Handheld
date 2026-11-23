@@ -28,6 +28,7 @@ installed; on a Mac the built-in `sips` tool is used otherwise.
 import argparse
 import difflib
 import html
+import json
 import os
 import re
 import shutil
@@ -40,6 +41,7 @@ import zipfile
 import zlib
 
 THUMBS = "https://thumbnails.libretro.com"
+GITHUB = "https://raw.githubusercontent.com/libretro-thumbnails"
 DATS = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro"
 COVER_W, COVER_H = 102, 136  # the launcher's centre cover box (coverflow.c)
 
@@ -102,12 +104,36 @@ def thumb_index(system, kind, cache):
     p = cache_path(cache, f"index-{system}-{kind}.txt")
     if os.path.exists(p):
         return open(p, encoding="utf-8").read().splitlines()
-    url = f"{THUMBS}/{urllib.parse.quote(system)}/{kind}/"
-    page = get(url, timeout=120).decode("utf-8", "replace")
-    names = sorted({html.unescape(urllib.parse.unquote(m))[:-4]
-                    for m in re.findall(r'href="([^"?/]+\.png)"', page)})
+    names = []
+    try:
+        url = f"{THUMBS}/{urllib.parse.quote(system)}/{kind}/"
+        page = get(url, timeout=120).decode("utf-8", "replace")
+        names = sorted({html.unescape(urllib.parse.unquote(m))[:-4]
+                        for m in re.findall(r'href="([^"?/]+\.png)"', page)})
+    except Exception as e:
+        print(f"  ({THUMBS} not reachable: {e})")
+    if not names:  # the same collection, from its GitHub repositories
+        names = github_index(system, kind)
     open(p, "w", encoding="utf-8").write("\n".join(names))
     return names
+
+
+def github_repo(system):
+    return f"{GITHUB}/{system.replace(' ', '_')}"
+
+
+def github_index(system, kind):
+    api = f"https://api.github.com/repos/libretro-thumbnails/{system.replace(' ', '_')}/git/trees"
+    root = json.loads(get(f"{api}/master", timeout=120))
+    sub = next(t["sha"] for t in root["tree"] if t["path"] == kind)
+    tree = json.loads(get(f"{api}/{sub}", timeout=120))
+    return sorted(t["path"][:-4] for t in tree["tree"] if t["path"].endswith(".png"))
+
+
+def thumb_urls(system, kind, name):
+    """Where a cover can be downloaded, best first."""
+    return [f"{THUMBS}/{urllib.parse.quote(system)}/{kind}/{urllib.parse.quote(name)}.png",
+            f"{github_repo(system)}/master/{kind}/{urllib.parse.quote(name)}.png"]
 
 
 def nointro_crcs(system, cache):
@@ -318,12 +344,16 @@ def main():
             if a.dry_run:
                 found += 1
                 continue
-            url = f"{THUMBS}/{urllib.parse.quote(system)}/{a.kind}/{urllib.parse.quote(match)}.png"
-            try:
-                data = get(url)
-            except Exception as e:
+            data = None
+            for url in thumb_urls(system, a.kind, match):
+                try:
+                    data = get(url)
+                    break
+                except Exception as e:
+                    err = e
+            if data is None:
                 missing += 1
-                print(f"     download failed: {e}")
+                print(f"     download failed: {err}")
                 continue
             os.makedirs(outdir, exist_ok=True)
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:

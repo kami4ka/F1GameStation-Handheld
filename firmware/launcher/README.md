@@ -44,6 +44,11 @@ PC, so new games go through the BOOT partition, which can:
    games, covers and names into `roms/<SYSTEM>/` (merging `names.txt`) and
    empties `add-games/`; macOS's `._*` and `.DS_Store` files are dropped.
 
+To take games off, put a `remove-games.txt` on the BOOT volume with one line
+per game, `<SYSTEM>/<file name>`, wildcards allowed (`SNES/Super Mario Kart*`).
+At the next start the ROM, its cover and its name are deleted from `roms/`,
+then the list.
+
 BOOT is 256 MB on cards made with `firmware/miyoocfw/scripts/make-sd.sh`.
 Games without art still show, on a plain card with their file name.
 
