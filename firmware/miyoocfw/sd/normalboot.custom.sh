@@ -50,18 +50,28 @@ if [ ! -f "${HOME}/.f1gs-demo-roms-removed" ]; then
 fi
 # F1GameStation: removing games. Each line of remove-games.txt on the BOOT
 # partition names games in roms/ as <SYSTEM>/<file>, shell wildcards
-# allowed (e.g. "SNES/Super Mario Kart.*"). The ROM, its cover and its
-# names.txt line go; the list is deleted when done.
+# allowed (e.g. "SNES/Super Mario Kart.*", or "*/*" for all games). A line
+# starting with ! keeps the games it matches (e.g. "!*/Dr. Mario*"). The
+# ROM, its cover and its names.txt line go; the list is deleted when done.
 if [ -f remove-games.txt ]; then
 	echo "Removing games..."
+	# keep patterns, one per line; split on newlines only
+	keep=$(tr -d '\r' < remove-games.txt | sed -n 's/^!//p')
 	tr -d '\r' < remove-games.txt | while IFS= read -r pat; do
-		case $pat in ''|'#'*|*..*) continue ;; esac
-		sys=${pat%%/*}
-		[ "$sys" != "$pat" ] && [ -n "$sys" ] || continue
+		case $pat in ''|'#'*|'!'*|*..*) continue ;; esac
+		case $pat in */*) ;; *) continue ;; esac
 		IFS= # wildcards in $pat expand, its spaces don't split it
 		for f in "${HOME}/roms/"$pat; do
 			[ -f "$f" ] || continue
 			name=$(basename "$f")
+			sys=$(basename "$(dirname "$f")")
+			printf '%s\n' "$keep" | {
+				while IFS= read -r k; do
+					[ -n "$k" ] || continue
+					case "$sys/$name" in $k) exit 0 ;; esac
+				done
+				exit 1
+			} && continue
 			img="${HOME}/roms/${sys}/.images"
 			rm -f "$f" "${img}/${name%.*}.png" "${img}/${name%.*}.jpg"
 			if [ -f "${img}/names.txt" ]; then

@@ -23,4 +23,7 @@ wildcards work, e.g.
 
     SNES/Super Mario Kart*
 
+A line starting with ! keeps games: "*/*" plus "!*/Dr. Mario*" deletes
+every game except Dr. Mario.
+
 They are deleted from roms/ (with their covers) on the next start.

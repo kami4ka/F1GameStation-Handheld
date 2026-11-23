@@ -45,7 +45,8 @@ PC, so new games go through the BOOT partition, which can:
    empties `add-games/`; macOS's `._*` and `.DS_Store` files are dropped.
 
 To take games off, put a `remove-games.txt` on the BOOT volume with one line
-per game, `<SYSTEM>/<file name>`, wildcards allowed (`SNES/Super Mario Kart*`).
+per game, `<SYSTEM>/<file name>`, wildcards allowed (`SNES/Super Mario Kart*`, or `*/*` for all).
+A line starting with `!` keeps what it matches, e.g. `!*/Dr. Mario*`.
 At the next start the ROM, its cover and its name are deleted from `roms/`,
 then the list.
 
